@@ -19,6 +19,7 @@ matplotlib.use("Agg")  # backend sem GUI — obrigatorio para uso em scripts no 
 import argparse
 import sys
 import pandas as pd
+import joblib
 from pathlib import Path
 
 # Garante que o diretório raiz está no path
@@ -30,12 +31,13 @@ from src.processing.merger    import build_dataset
 from src.processing.cleaner   import clean
 from src.features.engineering import build_features
 from src.models.train         import train_all
-from src.models.evaluate      import metrics_mean, feature_importance, print_report, plot_previsao_vs_real, plot_metricas_por_horizonte, plot_walk_forward_folds
+from src.models.evaluate      import metrics_mean, feature_importance, print_report, plot_previsao_vs_real, plot_metricas_por_horizonte, plot_walk_forward_folds, plot_analise_residuos, plot_erro_mensal
 from src.models.predict       import predict_latest
 
 
 # ── Caminhos de cache ──────────────────────────────────────────
 DATASET_CACHE = DATA_PROCESSED / "dataset_features.parquet"
+TRAIN_RESULTS_CACHE = DATA_PROCESSED / "train_results.joblib"
 
 
 def step_collect_and_process(use_cache: bool = False) -> pd.DataFrame:
@@ -69,7 +71,11 @@ def step_train(df: pd.DataFrame) -> dict:
     """Etapa 2: treinamento walk-forward de todos os horizontes."""
     print("\n[main] Iniciando treinamento...")
     results = train_all(df)
-    print("[main] Treinamento concluído.")
+    
+    # Salva o dicionário de validação em disco
+    joblib.dump(results, TRAIN_RESULTS_CACHE)
+    print(f"[main] Treinamento concluído e cache salvo em: {TRAIN_RESULTS_CACHE}")
+    
     return results
 
 
@@ -88,7 +94,7 @@ def step_evaluate(train_results: dict, df_features: pd.DataFrame = None) -> None
     print("\n[main] Gerando gráficos de previsão vs. real...")
     for model_type in ["xgb", "rf"]:
         try:
-            plot_previsao_vs_real(df_features, model_type=model_type, data_inicio="2025-11-01")
+            plot_previsao_vs_real(df_features, train_results, model_type=model_type, data_inicio="2025-11-01")
         except Exception as e:
             print(f"  [aviso] {e}")
 
@@ -100,6 +106,25 @@ def step_evaluate(train_results: dict, df_features: pd.DataFrame = None) -> None
         plot_walk_forward_folds(df_features)
     except Exception as e:
         print(f"  [aviso] {e}")
+
+    print("\n[main] Gerando gráficos de análise de resíduos...")
+    for h in HORIZONS:
+        for model_type in ["xgb", "rf"]:
+            try:
+                # Usa dados recentes para a janela de residuos (evita grafico superpoluido)
+                plot_analise_residuos(train_results, horizonte=h, model_type=model_type, data_inicio="2024-01-01")
+            except Exception as e:
+                print(f"  [aviso] Falha na análise de resíduos (h={h}, {model_type}): {e}")
+
+    print("\n[main] Gerando gráficos mensais de sazonalidade de erro (MAE/MAPE)...")
+    for h in HORIZONS:
+        for model_type in ["xgb", "rf"]:
+            try:
+                # Usa uma margem um pouco maior (ex: os últimos anos) para preencher todos os meses 
+                # e captar bem a sazonalidade sem ser muito influenciado por um único ano aleatório.
+                plot_erro_mensal(train_results, horizonte=h, model_type=model_type, data_inicio="2022-01-01")
+            except Exception as e:
+                print(f"  [aviso] Falha na análise mensal MAE/MAPE (h={h}, {model_type}): {e}")
 
 
 def step_predict(df: pd.DataFrame) -> None:
@@ -130,7 +155,13 @@ def run_predict(use_cache: bool = True) -> None:
 
 def run_evaluate(use_cache: bool = True) -> None:
     df = step_collect_and_process(use_cache=use_cache)
-    results = step_train(df)
+    
+    if use_cache and TRAIN_RESULTS_CACHE.exists():
+        print(f"[main] Carregando métricas de treinamento histórico salvas: {TRAIN_RESULTS_CACHE}")
+        results = joblib.load(TRAIN_RESULTS_CACHE)
+    else:
+        results = step_train(df)
+        
     step_evaluate(results, df)
 
 

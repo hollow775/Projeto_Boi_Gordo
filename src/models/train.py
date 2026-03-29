@@ -134,6 +134,11 @@ def train_horizon(
     splits = _walk_forward_splits(n)
 
     xgb_cv, rf_cv = [], []
+    
+    oof_dates = []
+    oof_y_true = []
+    oof_xgb_preds = []
+    oof_rf_preds = []
 
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
         X_train, X_test = X[train_idx], X[test_idx]
@@ -150,6 +155,13 @@ def train_horizon(
         rf.fit(X_train, y_train)
         rf_pred = rf.predict(X_test)
         rf_cv.append(_compute_metrics(y_test, rf_pred))
+
+        # Salva o dataset de log de previsoes out-of-fold para analise cega graficamente
+        test_dates = df_valid.index[test_idx]
+        oof_dates.extend(test_dates)
+        oof_y_true.extend(y_test)
+        oof_xgb_preds.extend(xgb_pred)
+        oof_rf_preds.extend(rf_pred)
 
         print(
             f"  [h{horizon}d | fold {fold_idx+1}/{len(splits)}] "
@@ -178,12 +190,19 @@ def train_horizon(
 
     print(f"  [h{horizon}d] Modelos salvos em {MODELS_DIR}")
 
+    oof_df = pd.DataFrame({
+        "y_true": oof_y_true,
+        "xgb_pred": oof_xgb_preds,
+        "rf_pred": oof_rf_preds
+    }, index=oof_dates)
+
     return {
         "xgb_model":      xgb_final,
         "rf_model":       rf_final,
         "xgb_cv_metrics": xgb_cv,
         "rf_cv_metrics":  rf_cv,
         "feature_cols":   feature_cols,
+        "oof_predictions": oof_df,
     }
 
 

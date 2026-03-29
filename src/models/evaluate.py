@@ -137,7 +137,7 @@ def print_report(train_results: dict) -> None:
     for h in df["horizonte_dias"].unique():
         sub = df[df["horizonte_dias"] == h]
         best = sub.loc[sub["MAPE"].idxmin()]
-        print(f"  h{h}d → {best['modelo']} (MAPE={best['MAPE']:.2f}%)")
+        print(f"  h{h}d -> {best['modelo']} (MAPE={best['MAPE']:.2f}%)")
 
 
 # ── Paleta de cores do projeto ─────────────────────────────────
@@ -158,6 +158,7 @@ HORIZON_LABELS = {
 
 def plot_previsao_vs_real(
     df: pd.DataFrame,
+    train_results: dict,
     model_type: str = "xgb",
     data_inicio: str = "2025-11-01",
     save_plot: bool = True,
@@ -201,19 +202,18 @@ def plot_previsao_vs_real(
 
     # Uma linha por horizonte
     for h in HORIZONS:
-        feature_cols = _load_feature_cols(h)
-        model        = _load_model(model_type, h)
-
-        X_df = df_plot[feature_cols].copy()
-        X_df = X_df.fillna(X_df.median())
-        preds = model.predict(X_df.values)
+        oof_df = train_results[h]["oof_predictions"]
+        
+        pred_col = f"{model_type}_pred"
+        preds = oof_df[pred_col].copy()
 
         # Desloca as previsoes para o instante correto:
         # a previsao feita em t para t+h deve ser plotada em t+h
-        pred_series = pd.Series(preds, index=df_plot.index)
+        pred_series = pd.Series(preds.values, index=oof_df.index)
         pred_series.index = pred_series.index + pd.Timedelta(days=h)
 
-        # Alinha com o periodo do grafico
+        # Alinha com o periodo do grafico: Cortar datas OOF antigas
+        pred_series = pred_series[pred_series.index >= pd.to_datetime(data_inicio)]
         pred_series = pred_series[pred_series.index <= df_plot.index[-1] + pd.Timedelta(days=h)]
 
         ax.plot(
@@ -430,5 +430,243 @@ def plot_walk_forward_folds(
         plt.savefig(plot_path, dpi=150)
         plt.close()
         print(f"[evaluate] Gráfico salvo: {plot_path}")
+    else:
+        plt.show()
+
+
+def plot_analise_residuos(
+    train_results: dict,
+    horizonte: int = 1,
+    model_type: str = "xgb",
+    data_inicio: str = "2024-01-01",
+    save_plot: bool = True,
+) -> None:
+    """
+    Gera um painel com análise gráfica de resíduos para um modelo e horizonte específicos.
+    
+    O painel inclui:
+    1. Gráfico de dispersão Valor Real vs. Previsão
+    2. Distribuição (Histograma) dos resíduos com curva normal
+    3. Comportamento dos resíduos ao longo do tempo
+    
+    Parametros
+    ----------
+    df          : DataFrame com as features e targets
+    horizonte   : Horizonte de previsão em dias (1, 15, 30, 60)
+    model_type  : 'xgb' ou 'rf'
+    data_inicio : data de inicio do grafico (formato YYYY-MM-DD)
+    save_plot   : salva grafico em data/processed/
+    """
+    import scipy.stats as stats
+
+    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
+    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+
+    # Carrega base OOF e seleciona a partir da data de inicio
+    oof_df = train_results[horizonte]["oof_predictions"]
+    try:
+        df_valid = oof_df.loc[data_inicio:].copy()
+    except KeyError:
+        df_valid = oof_df.copy()
+
+    if df_valid.empty:
+        print(f"[evaluate] Sem dados válidos (OOF) para a data a partir de {data_inicio}.")
+        return
+
+    y_true = df_valid["y_true"].values
+    y_pred = df_valid[f"{model_type}_pred"].values
+
+    residuos = y_true - y_pred
+
+    # Criação do diretório específico para despoluir a pasta processed
+    out_dir = DATA_PROCESSED / "analise_residuos"
+    if save_plot:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ==========================================
+    # 1. Scatter Real vs Previsto
+    # ==========================================
+    fig_scatter, ax_scatter = plt.subplots(figsize=(8, 6))
+    v_min = min(y_true.min(), y_pred.min())
+    v_max = max(y_true.max(), y_pred.max())
+
+    ax_scatter.scatter(y_true, y_pred, alpha=0.6, color="#1a6fad", edgecolors="white", s=45)
+    ax_scatter.plot([v_min, v_max], [v_min, v_max], "r--", lw=2, label="Previsão Perfeita (y=x)")
+    ax_scatter.set_title(f"Valor Real vs. Previsão ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_scatter.set_xlabel("Valor Real Observado (R$/arroba)", fontsize=10)
+    ax_scatter.set_ylabel("Valor Previsto pelo Modelo (R$/arroba)", fontsize=10)
+    ax_scatter.legend()
+    ax_scatter.grid(True, linestyle="--", alpha=0.4)
+    plt.tight_layout()
+
+    if save_plot:
+        scatter_path = out_dir / f"scatter_previsao_vs_real_{model_type}_h{horizonte}d.png"
+        plt.savefig(scatter_path, dpi=150)
+        plt.close(fig_scatter)
+    else:
+        plt.show()
+
+    # ==========================================
+    # 2. Histograma dos Resíduos
+    # ==========================================
+    fig_hist, ax_hist = plt.subplots(figsize=(8, 6))
+    ax_hist.hist(residuos, bins=30, density=True, alpha=0.7, color="#e06f00", edgecolor="black")
+    
+    xmin, xmax = ax_hist.get_xlim()
+    x_pdf = np.linspace(xmin, xmax, 100)
+    p_pdf = stats.norm.pdf(x_pdf, np.mean(residuos), np.std(residuos))
+    ax_hist.plot(x_pdf, p_pdf, "k", linewidth=2, label="Curva Normal Teórica")
+    
+    ax_hist.axvline(x=0, color='r', linestyle='--', lw=2, label='Erro Zero')
+    ax_hist.set_title(f"Distribuição dos Resíduos ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_hist.set_xlabel("Resíduo (Real - Previsto)", fontsize=10)
+    ax_hist.set_ylabel("Densidade", fontsize=10)
+    ax_hist.legend()
+    ax_hist.grid(True, linestyle="--", alpha=0.4)
+    plt.tight_layout()
+
+    if save_plot:
+        hist_path = out_dir / f"distribuicao_residuos_{model_type}_h{horizonte}d.png"
+        plt.savefig(hist_path, dpi=150)
+        plt.close(fig_hist)
+    else:
+        plt.show()
+
+    # ==========================================
+    # 3. Resíduos ao longo do tempo
+    # ==========================================
+    fig_time, ax_time = plt.subplots(figsize=(10, 5))
+    ax_time.plot(df_valid.index, residuos, color="#2b9957", lw=1.5, alpha=0.85)
+    ax_time.axhline(y=0, color="r", linestyle="--", lw=2, label="Erro Linha Base (Zero)")
+    ax_time.set_title(f"Comportamento Residual Histórico ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_time.set_xlabel("Data", fontsize=10)
+    ax_time.set_ylabel("Erro (R$ na arroba)", fontsize=10)
+    ax_time.legend(loc="upper right")
+    ax_time.grid(True, linestyle="--", alpha=0.4)
+    fig_time.autofmt_xdate(rotation=30)
+    plt.tight_layout()
+
+    if save_plot:
+        time_path = out_dir / f"historico_residuos_{model_type}_h{horizonte}d.png"
+        plt.savefig(time_path, dpi=150)
+        plt.close(fig_time)
+        print(f"[evaluate] 3 Gráficos de resíduos isolados salvos na pasta: {out_dir.name}/")
+    else:
+        plt.show()
+
+
+def plot_erro_mensal(
+    train_results: dict,
+    horizonte: int = 1,
+    model_type: str = "xgb",
+    data_inicio: str = "2022-01-01",
+    save_plot: bool = True,
+) -> None:
+    """
+    Agrupa os resíduos por mês do ano (Janeiro a Dezembro) para avaliar a 
+    sazonalidade do erro do modelo. Útil para identificar se o modelo 
+    apresenta mais dificuldades na safra ou entressafra do boi.
+    
+    Parametros
+    ----------
+    df          : DataFrame com as features e targets e DatetimeIndex
+    horizonte   : Horizonte de previsão em dias
+    model_type  : 'xgb' ou 'rf'
+    data_inicio : Utilizar um período maior (ex: últimos 2 anos) para ter volume razoável de meses
+    """
+    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
+    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+
+    oof_df = train_results[horizonte]["oof_predictions"]
+    try:
+        df_valid = oof_df.loc[data_inicio:].copy()
+    except KeyError:
+        df_valid = oof_df.copy()
+
+    if df_valid.empty:
+        print(f"[evaluate] Sem dados válidos (OOF) ao agrupar meses a partir de {data_inicio}.")
+        return
+
+    # Certifica-se de que o index é data para extrair o mês
+    if not isinstance(df_valid.index, pd.DatetimeIndex):
+        print("[evaluate] O índice do DataFrame não é datetime. Faltou indexar a data para esta análise mensal.")
+        return
+
+    y_true = df_valid["y_true"].values
+    y_pred = df_valid[f"{model_type}_pred"].values
+
+    # Cria DataFrame com as métricas individuais por linha
+    df_residuos = pd.DataFrame({
+        "erro_absoluto": np.abs(y_true - y_pred),
+        "mape": (np.abs(y_true - y_pred) / (np.abs(y_true) + 1e-8)) * 100
+    }, index=df_valid.index)
+
+    # Extrai o número do mês de 1 a 12
+    df_residuos["mes"] = df_residuos.index.month
+    
+    # Agrupa tirando a média das métricas para aquele mês historicamente
+    agrupado = df_residuos.groupby("mes")[["erro_absoluto", "mape"]].mean().reset_index()
+
+    # Mapeamento e alinhamento de 1 a 12
+    meses_str = {
+        1:"Jan", 2:"Fev", 3:"Mar", 4:"Abr", 5:"Mai", 6:"Jun",
+        7:"Jul", 8:"Ago", 9:"Set", 10:"Out", 11:"Nov", 12:"Dez"
+    }
+    
+    todos_meses = pd.DataFrame({"mes": list(range(1, 13))})
+    agrupado = pd.merge(todos_meses, agrupado, on="mes", how="left")
+    
+    x_labels = [meses_str[m] for m in agrupado["mes"]]
+    mae_vals = agrupado["erro_absoluto"].values
+    mape_vals = agrupado["mape"].values
+
+    out_dir = DATA_PROCESSED / "erro_sazonal"
+    if save_plot:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ==========================================
+    # Gráfico A: MAE Mensal (Gráfico Separado)
+    # ==========================================
+    fig_mae, ax1 = plt.subplots(figsize=(10, 5))
+    bars1 = ax1.bar(x_labels, mae_vals, color="#a37638", alpha=0.9, edgecolor="black")
+    ax1.set_title(f"Erro Absoluto Médio Histórico (MAE) por Mês — {model_label}\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax1.set_xlabel("Mês do Ano", fontsize=11)
+    ax1.set_ylabel("MAE (R$/arroba)", fontsize=11)
+    ax1.grid(axis="y", linestyle="--", alpha=0.4)
+    for bar in bars1:
+        h_val = bar.get_height()
+        if not np.isnan(h_val) and h_val > 0:
+            ax1.text(bar.get_x() + bar.get_width() / 2, h_val + (max(mae_vals)*0.02), 
+                     f"R${h_val:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+    plt.tight_layout()
+
+    if save_plot:
+        mae_path = out_dir / f"erro_sazonal_mae_{model_type}_h{horizonte}d.png"
+        plt.savefig(mae_path, dpi=150)
+        plt.close(fig_mae)
+    else:
+        plt.show()
+
+    # ==========================================
+    # Gráfico B: MAPE Mensal (Gráfico Separado)
+    # ==========================================
+    fig_mape, ax2 = plt.subplots(figsize=(10, 5))
+    bars2 = ax2.bar(x_labels, mape_vals, color="#3864a3", alpha=0.9, edgecolor="black")
+    ax2.set_title(f"Erro Percentual Absoluto (MAPE) por Mês — {model_label}\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax2.set_xlabel("Mês do Ano", fontsize=11)
+    ax2.set_ylabel("MAPE (%)", fontsize=11)
+    ax2.grid(axis="y", linestyle="--", alpha=0.4)
+    for bar in bars2:
+        h_val = bar.get_height()
+        if not np.isnan(h_val) and h_val > 0:
+            ax2.text(bar.get_x() + bar.get_width() / 2, h_val + (max(mape_vals)*0.02), 
+                     f"{h_val:.1f}%", ha="center", va="bottom", fontsize=10, fontweight="bold")
+    plt.tight_layout()
+
+    if save_plot:
+        mape_path = out_dir / f"erro_sazonal_mape_{model_type}_h{horizonte}d.png"
+        plt.savefig(mape_path, dpi=150)
+        plt.close(fig_mape)
+        print(f"[evaluate] 2 Gráficos de Sazonalidade (MAE/MAPE) isolados salvos na pasta: {out_dir.name}/")
     else:
         plt.show()
