@@ -18,6 +18,7 @@ pyarrow>=14.0.0          # backend parquet para pd.read/to_parquet
 
 # ── Leitura de planilhas (CEPEA) ───────────────────────────────
 openpyxl>=3.1.0          # leitura de .xlsx
+xlrd>=2.0.1              # leitura de .xls (formato legado)
 
 # ── Requisições HTTP (SIDRA, ComexStat, BCB) ───────────────────
 requests>=2.31.0
@@ -26,6 +27,8 @@ requests>=2.31.0
 cdsapi>=0.6.1            # cliente oficial Copernicus CDS
 xarray>=2023.12.0        # leitura de arquivos NetCDF
 netCDF4>=1.6.5           # backend NetCDF para xarray
+cfgrib>=0.9.10           # backend GRIB para xarray (ERA5 novo endpoint)
+eccodes>=1.7.0           # dependencia do cfgrib
 scipy>=1.11.0            # interpolação usada pelo xarray
 
 # ── Modelos de machine learning ────────────────────────────────

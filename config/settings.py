@@ -38,7 +38,7 @@ HORIZONS = [1, 15, 30, 60]
 # Código da série IPCA no Banco Central (SGS 433)
 IPCA_SGS_CODE = 433
 # Mês de referência para deflação (formato YYYY-MM)
-DEFLATION_BASE = "2024-12"
+DEFLATION_BASE = "2025-12"
 
 # ── Copernicus CDS ─────────────────────────────────────────────
 # Requer cadastro em https://cds.climate.copernicus.eu/

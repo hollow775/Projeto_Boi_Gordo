@@ -14,6 +14,8 @@
 #   3. pip install -r requirements.txt
 # ==============================================================
 
+import matplotlib
+matplotlib.use("Agg")  # backend sem GUI — obrigatorio para uso em scripts no Windows
 import argparse
 import sys
 import pandas as pd
@@ -23,11 +25,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config.settings import DATA_PROCESSED, HORIZONS
+from src.collectors.cepea import save_cepea_xlsx
 from src.processing.merger    import build_dataset
 from src.processing.cleaner   import clean
 from src.features.engineering import build_features
 from src.models.train         import train_all
-from src.models.evaluate      import metrics_mean, feature_importance, print_report
+from src.models.evaluate      import metrics_mean, feature_importance, print_report, plot_previsao_vs_real, plot_metricas_por_horizonte, plot_walk_forward_folds
 from src.models.predict       import predict_latest
 
 
@@ -46,6 +49,9 @@ def step_collect_and_process(use_cache: bool = False) -> pd.DataFrame:
 
     print("[main] Coletando dados de todas as fontes...")
     df_raw = build_dataset()
+
+    print("[main] Salvando Excel de inspecao do CEPEA...")
+    save_cepea_xlsx()
 
     print("[main] Limpando dados...")
     df_clean = clean(df_raw)
@@ -67,7 +73,7 @@ def step_train(df: pd.DataFrame) -> dict:
     return results
 
 
-def step_evaluate(train_results: dict) -> None:
+def step_evaluate(train_results: dict, df_features: pd.DataFrame = None) -> None:
     """Etapa 3: relatório de métricas e importância de features."""
     print_report(train_results)
 
@@ -78,6 +84,22 @@ def step_evaluate(train_results: dict) -> None:
                 feature_importance(h, model_type=model_type, save_plot=True)
             except FileNotFoundError as e:
                 print(f"  [aviso] {e}")
+
+    print("\n[main] Gerando gráficos de previsão vs. real...")
+    for model_type in ["xgb", "rf"]:
+        try:
+            plot_previsao_vs_real(df_features, model_type=model_type, data_inicio="2025-11-01")
+        except Exception as e:
+            print(f"  [aviso] {e}")
+
+    print("\n[main] Gerando gráfico de comparação de MAPE...")
+    plot_metricas_por_horizonte(train_results)
+
+    print("\n[main] Gerando gráfico de estrutura walk-forward...")
+    try:
+        plot_walk_forward_folds(df_features)
+    except Exception as e:
+        print(f"  [aviso] {e}")
 
 
 def step_predict(df: pd.DataFrame) -> None:
@@ -109,13 +131,13 @@ def run_predict(use_cache: bool = True) -> None:
 def run_evaluate(use_cache: bool = True) -> None:
     df = step_collect_and_process(use_cache=use_cache)
     results = step_train(df)
-    step_evaluate(results)
+    step_evaluate(results, df)
 
 
 def run_full(use_cache: bool = False) -> None:
     df = step_collect_and_process(use_cache=use_cache)
     results = step_train(df)
-    step_evaluate(results)
+    step_evaluate(results, df)
     step_predict(df)
 
 
