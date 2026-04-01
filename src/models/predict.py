@@ -11,8 +11,8 @@ import joblib
 from config.settings import HORIZONS, MODELS_DIR
 
 
-def _load_model(model_type: str, horizon: int):
-    path = MODELS_DIR / f"{model_type}_h{horizon}d.joblib"
+def _load_model(tipo_modelo: str, horizonte_dias: int):
+    path = MODELS_DIR / f"{tipo_modelo}_h{horizonte_dias}d.joblib"
     if not path.exists():
         raise FileNotFoundError(
             f"Modelo não encontrado: {path}\n"
@@ -21,11 +21,11 @@ def _load_model(model_type: str, horizon: int):
     return joblib.load(path)
 
 
-def _load_feature_cols(horizon: int) -> list[str]:
-    return joblib.load(MODELS_DIR / f"feature_cols_h{horizon}d.joblib")
+def _load_feature_cols(horizonte_dias: int) -> list[str]:
+    return joblib.load(MODELS_DIR / f"feature_cols_h{horizonte_dias}d.joblib")
 
 
-def predict_latest(df: pd.DataFrame) -> pd.DataFrame:
+def predict_latest(dataframe_features: pd.DataFrame) -> pd.DataFrame:
     """
     Gera previsões a partir do último registro disponível no DataFrame.
 
@@ -34,61 +34,61 @@ def predict_latest(df: pd.DataFrame) -> pd.DataFrame:
 
     Parâmetros
     ----------
-    df : DataFrame com features (saída de build_features)
+    dataframe_features : DataFrame com features (saída de build_features)
 
     Retorna
     -------
     pd.DataFrame com colunas:
-        horizonte_dias, xgb_pred, rf_pred, data_previsao
+        horizonte_dias, previsao_xgboost, previsao_random_forest, data_previsao
     """
-    last_date = df.index[-1]
+    ultima_data = dataframe_features.index[-1]
     rows = []
 
-    for h in HORIZONS:
-        feature_cols = _load_feature_cols(h)
+    for horizonte_dias in HORIZONS:
+        feature_cols = _load_feature_cols(horizonte_dias)
 
         # Última linha com todas as features preenchidas
-        row = df[feature_cols].dropna().iloc[[-1]]
+        row = dataframe_features[feature_cols].dropna().iloc[[-1]]
 
         X = row.values
 
-        xgb_pred = _load_model("xgb", h).predict(X)[0]
-        rf_pred  = _load_model("rf",  h).predict(X)[0]
+        previsao_xgboost = _load_model("xgboost", horizonte_dias).predict(X)[0]
+        previsao_random_forest  = _load_model("random_forest",  horizonte_dias).predict(X)[0]
 
         rows.append({
-            "horizonte_dias": h,
-            "data_base":      last_date.date(),
-            "data_previsao":  (last_date + pd.Timedelta(days=h)).date(),
-            "xgb_pred":       round(xgb_pred, 2),
-            "rf_pred":        round(rf_pred,  2),
-            "media_modelos":  round((xgb_pred + rf_pred) / 2, 2),
+            "horizonte_dias": horizonte_dias,
+            "data_base":      ultima_data.date(),
+            "data_previsao":  (ultima_data + pd.Timedelta(days=horizonte_dias)).date(),
+            "previsao_xgboost":       round(previsao_xgboost, 2),
+            "previsao_random_forest":        round(previsao_random_forest,  2),
+            "media_modelos":  round((previsao_xgboost + previsao_random_forest) / 2, 2),
         })
 
     result = pd.DataFrame(rows)
     return result
 
 
-def predict_period(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
+def predict_period(dataframe_features: pd.DataFrame, data_inicial: str, data_final: str) -> pd.DataFrame:
     """
     Gera previsões retroativas para um período (backtesting visual).
     Útil para comparar previsão vs. real em gráficos.
 
     Parâmetros
     ----------
-    df    : DataFrame com features
-    start : data inicial (YYYY-MM-DD)
-    end   : data final   (YYYY-MM-DD)
+    dataframe_features : DataFrame com features
+    data_inicial : data inicial (YYYY-MM-DD)
+    data_final   : data final   (YYYY-MM-DD)
 
     Retorna
     -------
     pd.DataFrame com previsões de cada modelo por horizonte e data.
     """
-    sub = df.loc[start:end]
+    sub = dataframe_features.loc[data_inicial:data_final]
     records = []
 
-    for h in HORIZONS:
-        feature_cols = _load_feature_cols(h)
-        target_col   = f"target_h{h}d"
+    for horizonte_dias in HORIZONS:
+        feature_cols = _load_feature_cols(horizonte_dias)
+        target_col   = f"target_h{horizonte_dias}d"
 
         X_df = sub[feature_cols].copy()
         col_medians = X_df.median()
@@ -96,17 +96,17 @@ def predict_period(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
 
         X = X_df.values
 
-        xgb_preds = _load_model("xgb", h).predict(X)
-        rf_preds  = _load_model("rf",  h).predict(X)
+        previsoes_xgboost = _load_model("xgboost", horizonte_dias).predict(X)
+        previsoes_random_forest  = _load_model("random_forest",  horizonte_dias).predict(X)
 
-        for i, date in enumerate(sub.index):
-            real = sub[target_col].iloc[i] if target_col in sub.columns else np.nan
+        for i, data in enumerate(sub.index):
+            valor_real = sub[target_col].iloc[i] if target_col in sub.columns else np.nan
             records.append({
-                "data":           date.date(),
-                "horizonte_dias": h,
-                "real":           round(real, 2) if not np.isnan(real) else None,
-                "xgb_pred":       round(xgb_preds[i], 2),
-                "rf_pred":        round(rf_preds[i],  2),
+                "data":           data.date(),
+                "horizonte_dias": horizonte_dias,
+                "valor_real":           round(valor_real, 2) if not np.isnan(valor_real) else None,
+                "previsao_xgboost":       round(previsoes_xgboost[i], 2),
+                "previsao_random_forest":        round(previsoes_random_forest[i],  2),
             })
 
     return pd.DataFrame(records)

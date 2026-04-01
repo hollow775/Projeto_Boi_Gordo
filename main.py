@@ -79,52 +79,50 @@ def step_train(df: pd.DataFrame) -> dict:
     return results
 
 
-def step_evaluate(train_results: dict, df_features: pd.DataFrame = None) -> None:
+def step_evaluate(resultados_treinamento: dict, dataframe_features: pd.DataFrame = None) -> None:
     """Etapa 3: relatório de métricas e importância de features."""
-    print_report(train_results)
+    print_report(resultados_treinamento)
 
     print("\n[main] Gerando gráficos de feature importance...")
-    for h in HORIZONS:
-        for model_type in ["xgb", "rf"]:
+    for horizonte_dias in HORIZONS:
+        for tipo_modelo in ["xgboost", "random_forest"]:
             try:
-                feature_importance(h, model_type=model_type, save_plot=True)
+                feature_importance(horizonte_dias, tipo_modelo=tipo_modelo, save_plot=True)
             except FileNotFoundError as e:
                 print(f"  [aviso] {e}")
 
     print("\n[main] Gerando gráficos de previsão vs. real...")
-    for model_type in ["xgb", "rf"]:
+    for tipo_modelo in ["xgboost", "random_forest"]:
         try:
-            plot_previsao_vs_real(df_features, train_results, model_type=model_type, data_inicio="2025-11-01")
+            plot_previsao_vs_real(dataframe_features, resultados_treinamento, tipo_modelo=tipo_modelo, data_inicio="2025-11-01")
         except Exception as e:
             print(f"  [aviso] {e}")
 
     print("\n[main] Gerando gráfico de comparação de MAPE...")
-    plot_metricas_por_horizonte(train_results)
+    plot_metricas_por_horizonte(resultados_treinamento)
 
     print("\n[main] Gerando gráfico de estrutura walk-forward...")
     try:
-        plot_walk_forward_folds(df_features)
+        plot_walk_forward_folds(dataframe_features)
     except Exception as e:
         print(f"  [aviso] {e}")
 
     print("\n[main] Gerando gráficos de análise de resíduos...")
-    for h in HORIZONS:
-        for model_type in ["xgb", "rf"]:
+    for horizonte_dias in HORIZONS:
+        for tipo_modelo in ["xgboost", "random_forest"]:
             try:
-                # Usa dados recentes para a janela de residuos (evita grafico superpoluido)
-                plot_analise_residuos(train_results, horizonte=h, model_type=model_type, data_inicio="2024-01-01")
+                # Usa dados a partir de 2020 para maior volume estatístico no scatter
+                plot_analise_residuos(resultados_treinamento, horizonte_dias=horizonte_dias, tipo_modelo=tipo_modelo, data_inicio="2020-01-01")
             except Exception as e:
-                print(f"  [aviso] Falha na análise de resíduos (h={h}, {model_type}): {e}")
+                print(f"  [aviso] Falha na análise de resíduos (h={horizonte_dias}, {tipo_modelo}): {e}")
 
     print("\n[main] Gerando gráficos mensais de sazonalidade de erro (MAE/MAPE)...")
-    for h in HORIZONS:
-        for model_type in ["xgb", "rf"]:
+    for horizonte_dias in HORIZONS:
+        for tipo_modelo in ["xgboost", "random_forest"]:
             try:
-                # Usa uma margem um pouco maior (ex: os últimos anos) para preencher todos os meses 
-                # e captar bem a sazonalidade sem ser muito influenciado por um único ano aleatório.
-                plot_erro_mensal(train_results, horizonte=h, model_type=model_type, data_inicio="2022-01-01")
+                plot_erro_mensal(resultados_treinamento, horizonte_dias=horizonte_dias, tipo_modelo=tipo_modelo, data_inicio="2022-01-01")
             except Exception as e:
-                print(f"  [aviso] Falha na análise mensal MAE/MAPE (h={h}, {model_type}): {e}")
+                print(f"  [aviso] Falha na análise mensal MAE/MAPE (h={horizonte_dias}, {tipo_modelo}): {e}")
 
 
 def step_predict(df: pd.DataFrame) -> None:

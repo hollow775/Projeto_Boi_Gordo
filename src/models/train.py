@@ -107,11 +107,12 @@ def train_horizon(
     Retorna
     -------
     dict com:
-        "xgb_model"     : modelo XGBoost treinado no dataset completo
-        "rf_model"      : modelo RF treinado no dataset completo
-        "xgb_cv_metrics": métricas walk-forward do XGBoost
-        "rf_cv_metrics" : métricas walk-forward do RF
+        "xgboost"     : modelo XGBoost treinado no dataset completo
+        "random_forest"      : modelo RF treinado no dataset completo
+        "metricas_cv_xgboost": métricas walk-forward do XGBoost
+        "metricas_cv_random_forest" : métricas walk-forward do RF
         "feature_cols"  : colunas de features usadas
+        "out_of_fold_dataframe" : DataFrame com previsões OOF e valores reais
     """
     target_col = f"target_h{horizon}d"
     if target_col not in df.columns:
@@ -133,56 +134,56 @@ def train_horizon(
     n = len(X)
     splits = _walk_forward_splits(n)
 
-    xgb_cv, rf_cv = [], []
+    metricas_cv_xgboost, metricas_cv_random_forest = [], []
     
-    oof_dates = []
-    oof_y_true = []
-    oof_xgb_preds = []
-    oof_rf_preds = []
+    datas_out_of_fold = []
+    y_verdadeiro_out_of_fold = []
+    previsoes_xgboost_out_of_fold = []
+    previsoes_random_forest_out_of_fold = []
 
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
         X_train, X_test = X[train_idx], X[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
 
         # XGBoost
-        xgb = XGBRegressor(**XGBOOST_PARAMS)
-        xgb.fit(X_train, y_train)
-        xgb_pred = xgb.predict(X_test)
-        xgb_cv.append(_compute_metrics(y_test, xgb_pred))
+        xgboost = XGBRegressor(**XGBOOST_PARAMS)
+        xgboost.fit(X_train, y_train)
+        previsao_xgboost = xgboost.predict(X_test)
+        metricas_cv_xgboost.append(_compute_metrics(y_test, previsao_xgboost))
 
         # Random Forest
-        rf = RandomForestRegressor(**RF_PARAMS)
-        rf.fit(X_train, y_train)
-        rf_pred = rf.predict(X_test)
-        rf_cv.append(_compute_metrics(y_test, rf_pred))
+        random_forest = RandomForestRegressor(**RF_PARAMS)
+        random_forest.fit(X_train, y_train)
+        previsao_random_forest = random_forest.predict(X_test)
+        metricas_cv_random_forest.append(_compute_metrics(y_test, previsao_random_forest))
 
         # Salva o dataset de log de previsoes out-of-fold para analise cega graficamente
         test_dates = df_valid.index[test_idx]
-        oof_dates.extend(test_dates)
-        oof_y_true.extend(y_test)
-        oof_xgb_preds.extend(xgb_pred)
-        oof_rf_preds.extend(rf_pred)
+        datas_out_of_fold.extend(test_dates)
+        y_verdadeiro_out_of_fold.extend(y_test)
+        previsoes_xgboost_out_of_fold.extend(previsao_xgboost)
+        previsoes_random_forest_out_of_fold.extend(previsao_random_forest)
 
         print(
             f"  [h{horizon}d | fold {fold_idx+1}/{len(splits)}] "
-            f"XGB MAPE={xgb_cv[-1]['MAPE']:.2f}% | "
-            f"RF  MAPE={rf_cv[-1]['MAPE']:.2f}%"
+            f"XGB MAPE={metricas_cv_xgboost[-1]['MAPE']:.2f}% | "
+            f"RF  MAPE={metricas_cv_random_forest[-1]['MAPE']:.2f}%"
         )
 
     # Treina modelo final em todo o dataset (sem split)
     print(f"  [h{horizon}d] Treinando modelo final em {n} observações...")
 
-    xgb_final = XGBRegressor(**XGBOOST_PARAMS)
-    xgb_final.fit(X, y)
+    xgboost_final = XGBRegressor(**XGBOOST_PARAMS)
+    xgboost_final.fit(X, y)
 
-    rf_final = RandomForestRegressor(**RF_PARAMS)
-    rf_final.fit(X, y)
+    random_forest_final = RandomForestRegressor(**RF_PARAMS)
+    random_forest_final.fit(X, y)
 
     # Salva modelos
-    xgb_path = MODELS_DIR / f"xgb_h{horizon}d.joblib"
-    rf_path  = MODELS_DIR / f"rf_h{horizon}d.joblib"
-    joblib.dump(xgb_final, xgb_path)
-    joblib.dump(rf_final,  rf_path)
+    caminho_xgboost = MODELS_DIR / f"xgboost_h{horizon}d.joblib"
+    caminho_random_forest  = MODELS_DIR / f"random_forest_h{horizon}d.joblib"
+    joblib.dump(xgboost_final, caminho_xgboost)
+    joblib.dump(random_forest_final,  caminho_random_forest)
 
     # Salva nomes das features junto com o modelo
     feat_path = MODELS_DIR / f"feature_cols_h{horizon}d.joblib"
@@ -190,19 +191,19 @@ def train_horizon(
 
     print(f"  [h{horizon}d] Modelos salvos em {MODELS_DIR}")
 
-    oof_df = pd.DataFrame({
-        "y_true": oof_y_true,
-        "xgb_pred": oof_xgb_preds,
-        "rf_pred": oof_rf_preds
-    }, index=oof_dates)
+    out_of_fold_dataframe = pd.DataFrame({
+        "y_true": y_verdadeiro_out_of_fold,
+        "previsao_xgboost": previsoes_xgboost_out_of_fold,
+        "previsao_random_forest": previsoes_random_forest_out_of_fold
+    }, index=datas_out_of_fold)
 
     return {
-        "xgb_model":      xgb_final,
-        "rf_model":       rf_final,
-        "xgb_cv_metrics": xgb_cv,
-        "rf_cv_metrics":  rf_cv,
+        "xgboost":      xgboost_final,
+        "random_forest":       random_forest_final,
+        "metricas_cv_xgboost": metricas_cv_xgboost,
+        "metricas_cv_random_forest":  metricas_cv_random_forest,
         "feature_cols":   feature_cols,
-        "oof_predictions": oof_df,
+        "out_of_fold_dataframe": out_of_fold_dataframe,
     }
 
 

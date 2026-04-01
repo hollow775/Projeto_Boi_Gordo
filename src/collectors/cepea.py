@@ -160,19 +160,33 @@ def save_cepea_xlsx(output_path: str | None = None) -> None:
     """
     Salva a serie combinada do CEPEA em Excel para inspecao visual.
     Util para verificar se os valores estao sendo lidos corretamente.
+    Inclui os dados do indice IPCA (Banco Central).
     """
     from config.settings import DATA_PROCESSED
+    from src.collectors.bcb_ipca import load_ipca_deflator
+    
     df = load_cepea()
+
+    try:
+        df_ipca = load_ipca_deflator()
+        df = df.join(df_ipca, how="left")
+    except Exception as e:
+        print(f"[cepea] Aviso: não foi possível anexar o IPCA: {e}")
 
     path = output_path or str(DATA_PROCESSED / "cepea_combinado_inspecao.xlsx")
 
     df_export = df.copy()
     df_export.index.name = "Data"
-    df_export = df_export.rename(columns={
+    
+    col_mapping = {
         "preco_boi_gordo": "Preco Boi Gordo (R$/arroba)",
         "preco_bezerro":   "Preco Bezerro (R$/cabeca)",
         "preco_milho":     "Preco Milho (R$/saca 60kg)",
-    })
+    }
+    if "ipca_index" in df_export.columns:
+        col_mapping["ipca_index"] = "Indice IPCA"
+        
+    df_export = df_export.rename(columns=col_mapping)
 
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         df_export.to_excel(writer, sheet_name="CEPEA Combinado")

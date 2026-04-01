@@ -80,7 +80,9 @@ def gerar_shap(horizonte: int, model_type: str, top_n: int, n_amostras: int):
         fontsize=12, fontweight="bold",
     )
     plt.tight_layout()
-    path1 = DATA_PROCESSED / f"shap_summary_{model_type}_h{horizonte}d.png"
+    out_dir = DATA_PROCESSED / "shap_importancia"
+    out_dir.mkdir(exist_ok=True)
+    path1 = out_dir / f"shap_summary_{model_type}_h{horizonte}d.png"
     plt.savefig(path1, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"[shap] Grafico salvo: {path1}")
@@ -102,7 +104,9 @@ def gerar_shap(horizonte: int, model_type: str, top_n: int, n_amostras: int):
     ax.set_xlabel("Valor SHAP medio absoluto (R$/arroba)", fontsize=11)
     ax.tick_params(axis="y", labelsize=8)
     plt.tight_layout()
-    path2 = DATA_PROCESSED / f"shap_importancia_{model_type}_h{horizonte}d.png"
+    out_dir = DATA_PROCESSED / "shap_importancia"
+    out_dir.mkdir(exist_ok=True)
+    path2 = out_dir / f"shap_importancia_{model_type}_h{horizonte}d.png"
     plt.savefig(path2, dpi=150)
     plt.close()
     print(f"[shap] Grafico salvo: {path2}")

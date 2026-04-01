@@ -30,41 +30,37 @@ def _load_feature_cols(horizon: int) -> list[str]:
     return joblib.load(path)
 
 
-def metrics_summary(train_results: dict) -> pd.DataFrame:
+def metrics_summary(resultados_treinamento: dict) -> pd.DataFrame:
     """
-    Consolida métricas walk-forward de todos os horizontes em um DataFrame.
-
-    Parâmetros
-    ----------
-    train_results : saída de train_all()
+    Consolida as métricas walk-forward num único DataFrame tidy.
 
     Retorna
     -------
     pd.DataFrame com colunas: horizonte, modelo, fold, RMSE, MAE, MAPE
     """
     rows = []
-    for h, result in train_results.items():
-        for model_name, cv_key in [("XGBoost", "xgb_cv_metrics"), ("RandomForest", "rf_cv_metrics")]:
+    for horizonte_dias, result in resultados_treinamento.items():
+        for model_name, cv_key in [("XGBoost", "metricas_cv_xgboost"), ("RandomForest", "metricas_cv_random_forest")]:
             for fold_idx, metrics in enumerate(result[cv_key]):
                 rows.append({
-                    "horizonte_dias": h,
+                    "horizonte_dias": horizonte_dias,
                     "modelo":         model_name,
                     "fold":           fold_idx + 1,
                     **metrics,
                 })
 
-    df = pd.DataFrame(rows)
-    return df
+    dataframe_metricas = pd.DataFrame(rows)
+    return dataframe_metricas
 
 
-def metrics_mean(train_results: dict) -> pd.DataFrame:
+def metrics_mean(resultados_treinamento: dict) -> pd.DataFrame:
     """
     Média das métricas walk-forward por horizonte e modelo.
     Esta é a métrica de comparação principal entre modelos.
     """
-    df = metrics_summary(train_results)
+    dataframe_metricas = metrics_summary(resultados_treinamento)
     summary = (
-        df.groupby(["horizonte_dias", "modelo"])[["RMSE", "MAE", "MAPE"]]
+        dataframe_metricas.groupby(["horizonte_dias", "modelo"])[["RMSE", "MAE", "MAPE"]]
         .mean()
         .round(4)
         .reset_index()
@@ -73,8 +69,8 @@ def metrics_mean(train_results: dict) -> pd.DataFrame:
 
 
 def feature_importance(
-    horizon: int,
-    model_type: str = "xgb",
+    horizonte_dias: int,
+    tipo_modelo: str = "xgboost",
     top_n: int = 20,
     save_plot: bool = True,
 ) -> pd.DataFrame:
@@ -83,8 +79,8 @@ def feature_importance(
 
     Parâmetros
     ----------
-    horizon    : horizonte em dias
-    model_type : 'xgb' ou 'rf'
+    horizonte_dias    : horizonte em dias
+    tipo_modelo : 'xgboost' ou 'random_forest'
     top_n      : número de features exibidas
     save_plot  : salva gráfico em data/processed/
 
@@ -92,52 +88,54 @@ def feature_importance(
     -------
     pd.DataFrame com colunas: feature, importance (ordenado decrescente)
     """
-    model = _load_model(model_type, horizon)
-    feature_cols = _load_feature_cols(horizon)
+    model = _load_model(tipo_modelo, horizonte_dias)
+    feature_cols = _load_feature_cols(horizonte_dias)
 
     importances = model.feature_importances_
-    df = pd.DataFrame({
+    dataframe_importances = pd.DataFrame({
         "feature":    feature_cols,
         "importance": importances,
     }).sort_values("importance", ascending=False).head(top_n).reset_index(drop=True)
 
-    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
-    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
 
     if save_plot:
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.barh(df["feature"][::-1], df["importance"][::-1])
+        ax.barh(dataframe_importances["feature"][::-1], dataframe_importances["importance"][::-1])
         ax.set_title(
-            f"Importância das Variáveis — {model_label} | Horizonte: {horizon} dias",
+            f"Importância das Variáveis — {model_label} | Horizonte: {horizonte_dias} dias",
             fontsize=13, fontweight="bold",
         )
         ax.set_xlabel("Importância", fontsize=11)
         ax.set_ylabel("Variável", fontsize=11)
         ax.tick_params(axis="y", labelsize=8)
         plt.tight_layout()
-        plot_path = DATA_PROCESSED / f"importancia_variaveis_{model_type}_h{horizon}d.png"
+        out_dir = DATA_PROCESSED / "importancia_variaveis"
+        out_dir.mkdir(exist_ok=True)
+        plot_path = out_dir / f"importancia_variaveis_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(plot_path, dpi=150)
         plt.close()
         print(f"[evaluate] Gráfico salvo: {plot_path}")
 
-    return df
+    return dataframe_importances
 
 
-def print_report(train_results: dict) -> None:
+def print_report(resultados_treinamento: dict) -> None:
     """Imprime relatório consolidado de métricas no console."""
-    df = metrics_mean(train_results)
+    dataframe_medias = metrics_mean(resultados_treinamento)
     print("\n" + "=" * 60)
     print("MÉTRICAS WALK-FORWARD (médias por horizonte)")
     print("=" * 60)
-    print(df.to_string(index=False))
+    print(dataframe_medias.to_string(index=False))
     print("=" * 60)
 
     # Indica o melhor modelo por horizonte com base em MAPE
     print("\nMelhor modelo por horizonte (menor MAPE médio):")
-    for h in df["horizonte_dias"].unique():
-        sub = df[df["horizonte_dias"] == h]
+    for horizonte_dias in dataframe_medias["horizonte_dias"].unique():
+        sub = dataframe_medias[dataframe_medias["horizonte_dias"] == horizonte_dias]
         best = sub.loc[sub["MAPE"].idxmin()]
-        print(f"  h{h}d -> {best['modelo']} (MAPE={best['MAPE']:.2f}%)")
+        print(f"  h{horizonte_dias}d -> {best['modelo']} (MAPE={best['MAPE']:.2f}%)")
 
 
 # ── Paleta de cores do projeto ─────────────────────────────────
@@ -157,9 +155,9 @@ HORIZON_LABELS = {
 
 
 def plot_previsao_vs_real(
-    df: pd.DataFrame,
-    train_results: dict,
-    model_type: str = "xgb",
+    dataframe_dados: pd.DataFrame,
+    resultados_treinamento: dict,
+    tipo_modelo: str = "xgboost",
     data_inicio: str = "2025-11-01",
     save_plot: bool = True,
 ) -> None:
@@ -171,18 +169,18 @@ def plot_previsao_vs_real(
 
     Parametros
     ----------
-    df          : DataFrame com features (saida de build_features)
-    model_type  : 'xgb' ou 'rf'
-    data_inicio : data de inicio do grafico (formato YYYY-MM-DD)
-    save_plot   : salva grafico em data/processed/
+    dataframe_dados : DataFrame original
+    tipo_modelo     : 'xgboost' ou 'random_forest'
+    data_inicio     : data de inicio do grafico (formato YYYY-MM-DD)
+    save_plot       : salva grafico em data/processed/
     """
     from src.models.predict import _load_model, _load_feature_cols
 
-    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
-    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
 
     # Seleciona a partir da data de inicio
-    df_plot = df.loc[data_inicio:].copy()
+    df_plot = dataframe_dados.loc[data_inicio:].copy()
 
     if df_plot.empty:
         print(f"[evaluate] Sem dados a partir de {data_inicio}. Verifique DATE_RANGE em settings.py.")
@@ -201,29 +199,29 @@ def plot_previsao_vs_real(
     )
 
     # Uma linha por horizonte
-    for h in HORIZONS:
-        oof_df = train_results[h]["oof_predictions"]
+    for horizonte_dias in HORIZONS:
+        out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
         
-        pred_col = f"{model_type}_pred"
-        preds = oof_df[pred_col].copy()
+        coluna_previsao = f"previsao_{tipo_modelo}"
+        previsoes = out_of_fold_dataframe[coluna_previsao].copy()
 
         # Desloca as previsoes para o instante correto:
-        # a previsao feita em t para t+h deve ser plotada em t+h
-        pred_series = pd.Series(preds.values, index=oof_df.index)
-        pred_series.index = pred_series.index + pd.Timedelta(days=h)
+        # a previsao feita em t para t+horizonte_dias deve ser plotada em t+horizonte_dias
+        serie_previsoes = pd.Series(previsoes.values, index=out_of_fold_dataframe.index)
+        serie_previsoes.index = serie_previsoes.index + pd.Timedelta(days=horizonte_dias)
 
         # Alinha com o periodo do grafico: Cortar datas OOF antigas
-        pred_series = pred_series[pred_series.index >= pd.to_datetime(data_inicio)]
-        pred_series = pred_series[pred_series.index <= df_plot.index[-1] + pd.Timedelta(days=h)]
+        serie_previsoes = serie_previsoes[serie_previsoes.index >= pd.to_datetime(data_inicio)]
+        serie_previsoes = serie_previsoes[serie_previsoes.index <= df_plot.index[-1] + pd.Timedelta(days=horizonte_dias)]
 
         ax.plot(
-            pred_series.index,
-            pred_series.values,
-            color=HORIZON_COLORS[h],
+            serie_previsoes.index,
+            serie_previsoes.values,
+            color=HORIZON_COLORS[horizonte_dias],
             linewidth=1.4,
             linestyle="--",
             alpha=0.85,
-            label=f"Previsão {HORIZON_LABELS[h]}",
+            label=f"Previsão {HORIZON_LABELS[horizonte_dias]}",
         )
 
     ax.set_title(
@@ -241,7 +239,9 @@ def plot_previsao_vs_real(
     plt.tight_layout()
 
     if save_plot:
-        plot_path = DATA_PROCESSED / f"previsao_vs_real_{model_type}.png"
+        out_dir = DATA_PROCESSED / "previsao_vs_real"
+        out_dir.mkdir(exist_ok=True)
+        plot_path = out_dir / f"previsao_vs_real_{tipo_modelo}.png"
         plt.savefig(plot_path, dpi=150)
         plt.close()
         print(f"[evaluate] Gráfico salvo: {plot_path}")
@@ -250,32 +250,32 @@ def plot_previsao_vs_real(
 
 
 def plot_metricas_por_horizonte(
-    train_results: dict,
+    resultados_treinamento: dict,
     save_plot: bool = True,
 ) -> None:
     """
     Grafico de barras comparando MAPE medio de XGBoost e Random Forest
     por horizonte de previsao.
     """
-    df = metrics_mean(train_results)
+    dataframe_medias = metrics_mean(resultados_treinamento)
 
-    horizontes  = sorted(df["horizonte_dias"].unique())
+    horizontes  = sorted(dataframe_medias["horizonte_dias"].unique())
     x           = np.arange(len(horizontes))
     largura     = 0.35
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    xgb_mapes = [
-        df[(df["horizonte_dias"] == h) & (df["modelo"] == "XGBoost")]["MAPE"].values[0]
-        for h in horizontes
+    mapes_xgboost = [
+        dataframe_medias[(dataframe_medias["horizonte_dias"] == horizonte_dias) & (dataframe_medias["modelo"] == "XGBoost")]["MAPE"].values[0]
+        for horizonte_dias in horizontes
     ]
-    rf_mapes = [
-        df[(df["horizonte_dias"] == h) & (df["modelo"] == "RandomForest")]["MAPE"].values[0]
-        for h in horizontes
+    mapes_random_forest = [
+        dataframe_medias[(dataframe_medias["horizonte_dias"] == horizonte_dias) & (dataframe_medias["modelo"] == "RandomForest")]["MAPE"].values[0]
+        for horizonte_dias in horizontes
     ]
 
-    bars_xgb = ax.bar(x - largura/2, xgb_mapes, largura, label="XGBoost",      color="#2b9957", alpha=0.9)
-    bars_rf  = ax.bar(x + largura/2, rf_mapes,  largura, label="Random Forest", color="#e06f00", alpha=0.9)
+    bars_xgb = ax.bar(x - largura/2, mapes_xgboost, largura, label="XGBoost",      color="#2b9957", alpha=0.9)
+    bars_rf  = ax.bar(x + largura/2, mapes_random_forest,  largura, label="Random Forest", color="#e06f00", alpha=0.9)
 
     # Rotulos de valor nas barras
     for bar in bars_xgb:
@@ -303,12 +303,14 @@ def plot_metricas_por_horizonte(
     ax.set_xticklabels([f"{h} dias" for h in horizontes], fontsize=11)
     ax.legend(fontsize=10)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
-    ax.set_ylim(0, max(max(xgb_mapes), max(rf_mapes)) * 1.2)
+    ax.set_ylim(0, max(max(mapes_xgboost), max(mapes_random_forest)) * 1.2)
 
     plt.tight_layout()
 
     if save_plot:
-        plot_path = DATA_PROCESSED / "comparacao_mape_modelos.png"
+        out_dir = DATA_PROCESSED / "metricas"
+        out_dir.mkdir(exist_ok=True)
+        plot_path = out_dir / "comparacao_mape_modelos.png"
         plt.savefig(plot_path, dpi=150)
         plt.close()
         print(f"[evaluate] Gráfico salvo: {plot_path}")
@@ -426,7 +428,9 @@ def plot_walk_forward_folds(
     plt.tight_layout()
 
     if save_plot:
-        plot_path = DATA_PROCESSED / "walk_forward_folds.png"
+        out_dir = DATA_PROCESSED / "walk_forward"
+        out_dir.mkdir(exist_ok=True)
+        plot_path = out_dir / "walk_forward_folds.png"
         plt.savefig(plot_path, dpi=150)
         plt.close()
         print(f"[evaluate] Gráfico salvo: {plot_path}")
@@ -448,33 +452,26 @@ def plot_analise_residuos(
     1. Gráfico de dispersão Valor Real vs. Previsão
     2. Distribuição (Histograma) dos resíduos com curva normal
     3. Comportamento dos resíduos ao longo do tempo
-    
-    Parametros
-    ----------
-    df          : DataFrame com as features e targets
-    horizonte   : Horizonte de previsão em dias (1, 15, 30, 60)
-    model_type  : 'xgb' ou 'rf'
-    data_inicio : data de inicio do grafico (formato YYYY-MM-DD)
-    save_plot   : salva grafico em data/processed/
+    Gera as visualizações de análise de comportamento residual do modelo.
     """
     import scipy.stats as stats
 
-    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
-    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
 
     # Carrega base OOF e seleciona a partir da data de inicio
-    oof_df = train_results[horizonte]["oof_predictions"]
+    out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
     try:
-        df_valid = oof_df.loc[data_inicio:].copy()
+        df_valid = out_of_fold_dataframe.loc[data_inicio:].copy()
     except KeyError:
-        df_valid = oof_df.copy()
+        df_valid = out_of_fold_dataframe.copy()
 
     if df_valid.empty:
         print(f"[evaluate] Sem dados válidos (OOF) para a data a partir de {data_inicio}.")
         return
 
     y_true = df_valid["y_true"].values
-    y_pred = df_valid[f"{model_type}_pred"].values
+    y_pred = df_valid[f"previsao_{tipo_modelo}"].values
 
     residuos = y_true - y_pred
 
@@ -492,7 +489,7 @@ def plot_analise_residuos(
 
     ax_scatter.scatter(y_true, y_pred, alpha=0.6, color="#1a6fad", edgecolors="white", s=45)
     ax_scatter.plot([v_min, v_max], [v_min, v_max], "r--", lw=2, label="Previsão Perfeita (y=x)")
-    ax_scatter.set_title(f"Valor Real vs. Previsão ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_scatter.set_title(f"Valor Real vs. Previsão ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_scatter.set_xlabel("Valor Real Observado (R$/arroba)", fontsize=10)
     ax_scatter.set_ylabel("Valor Previsto pelo Modelo (R$/arroba)", fontsize=10)
     ax_scatter.legend()
@@ -500,7 +497,7 @@ def plot_analise_residuos(
     plt.tight_layout()
 
     if save_plot:
-        scatter_path = out_dir / f"scatter_previsao_vs_real_{model_type}_h{horizonte}d.png"
+        scatter_path = out_dir / f"scatter_previsao_vs_real_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(scatter_path, dpi=150)
         plt.close(fig_scatter)
     else:
@@ -518,7 +515,7 @@ def plot_analise_residuos(
     ax_hist.plot(x_pdf, p_pdf, "k", linewidth=2, label="Curva Normal Teórica")
     
     ax_hist.axvline(x=0, color='r', linestyle='--', lw=2, label='Erro Zero')
-    ax_hist.set_title(f"Distribuição dos Resíduos ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_hist.set_title(f"Distribuição dos Resíduos ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_hist.set_xlabel("Resíduo (Real - Previsto)", fontsize=10)
     ax_hist.set_ylabel("Densidade", fontsize=10)
     ax_hist.legend()
@@ -526,7 +523,7 @@ def plot_analise_residuos(
     plt.tight_layout()
 
     if save_plot:
-        hist_path = out_dir / f"distribuicao_residuos_{model_type}_h{horizonte}d.png"
+        hist_path = out_dir / f"distribuicao_residuos_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(hist_path, dpi=150)
         plt.close(fig_hist)
     else:
@@ -538,7 +535,7 @@ def plot_analise_residuos(
     fig_time, ax_time = plt.subplots(figsize=(10, 5))
     ax_time.plot(df_valid.index, residuos, color="#2b9957", lw=1.5, alpha=0.85)
     ax_time.axhline(y=0, color="r", linestyle="--", lw=2, label="Erro Linha Base (Zero)")
-    ax_time.set_title(f"Comportamento Residual Histórico ({model_label})\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax_time.set_title(f"Comportamento Residual Histórico ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_time.set_xlabel("Data", fontsize=10)
     ax_time.set_ylabel("Erro (R$ na arroba)", fontsize=10)
     ax_time.legend(loc="upper right")
@@ -547,7 +544,7 @@ def plot_analise_residuos(
     plt.tight_layout()
 
     if save_plot:
-        time_path = out_dir / f"historico_residuos_{model_type}_h{horizonte}d.png"
+        time_path = out_dir / f"historico_residuos_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(time_path, dpi=150)
         plt.close(fig_time)
         print(f"[evaluate] 3 Gráficos de resíduos isolados salvos na pasta: {out_dir.name}/")
@@ -556,32 +553,25 @@ def plot_analise_residuos(
 
 
 def plot_erro_mensal(
-    train_results: dict,
-    horizonte: int = 1,
-    model_type: str = "xgb",
+    resultados_treinamento: dict,
+    horizonte_dias: int = 1,
+    tipo_modelo: str = "xgboost",
     data_inicio: str = "2022-01-01",
     save_plot: bool = True,
 ) -> None:
     """
-    Agrupa os resíduos por mês do ano (Janeiro a Dezembro) para avaliar a 
-    sazonalidade do erro do modelo. Útil para identificar se o modelo 
-    apresenta mais dificuldades na safra ou entressafra do boi.
-    
-    Parametros
-    ----------
-    df          : DataFrame com as features e targets e DatetimeIndex
-    horizonte   : Horizonte de previsão em dias
-    model_type  : 'xgb' ou 'rf'
-    data_inicio : Utilizar um período maior (ex: últimos 2 anos) para ter volume razoável de meses
+    Constrói um gráfico de barras que demonstra a oscilação do MAPE e MAE 
+    historicamente de acordo com os Mêses do Ano. 
+    Ideal para identificar a perda de previsibilidade na entressafra e fatores macro.
     """
-    MODEL_NAMES = {"xgb": "XGBoost", "rf": "Random Forest"}
-    model_label = MODEL_NAMES.get(model_type, model_type.upper())
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
 
-    oof_df = train_results[horizonte]["oof_predictions"]
+    out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
     try:
-        df_valid = oof_df.loc[data_inicio:].copy()
+        df_valid = out_of_fold_dataframe.loc[data_inicio:].copy()
     except KeyError:
-        df_valid = oof_df.copy()
+        df_valid = out_of_fold_dataframe.copy()
 
     if df_valid.empty:
         print(f"[evaluate] Sem dados válidos (OOF) ao agrupar meses a partir de {data_inicio}.")
@@ -593,7 +583,7 @@ def plot_erro_mensal(
         return
 
     y_true = df_valid["y_true"].values
-    y_pred = df_valid[f"{model_type}_pred"].values
+    y_pred = df_valid[f"previsao_{tipo_modelo}"].values
 
     # Cria DataFrame com as métricas individuais por linha
     df_residuos = pd.DataFrame({
@@ -629,7 +619,7 @@ def plot_erro_mensal(
     # ==========================================
     fig_mae, ax1 = plt.subplots(figsize=(10, 5))
     bars1 = ax1.bar(x_labels, mae_vals, color="#a37638", alpha=0.9, edgecolor="black")
-    ax1.set_title(f"Erro Absoluto Médio Histórico (MAE) por Mês — {model_label}\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax1.set_title(f"Erro Absoluto Médio Histórico (MAE) por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax1.set_xlabel("Mês do Ano", fontsize=11)
     ax1.set_ylabel("MAE (R$/arroba)", fontsize=11)
     ax1.grid(axis="y", linestyle="--", alpha=0.4)
@@ -641,7 +631,7 @@ def plot_erro_mensal(
     plt.tight_layout()
 
     if save_plot:
-        mae_path = out_dir / f"erro_sazonal_mae_{model_type}_h{horizonte}d.png"
+        mae_path = out_dir / f"erro_sazonal_mae_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(mae_path, dpi=150)
         plt.close(fig_mae)
     else:
@@ -652,7 +642,7 @@ def plot_erro_mensal(
     # ==========================================
     fig_mape, ax2 = plt.subplots(figsize=(10, 5))
     bars2 = ax2.bar(x_labels, mape_vals, color="#3864a3", alpha=0.9, edgecolor="black")
-    ax2.set_title(f"Erro Percentual Absoluto (MAPE) por Mês — {model_label}\nHorizonte: {horizonte} dias", fontsize=12, fontweight="bold")
+    ax2.set_title(f"Erro Percentual Absoluto (MAPE) por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax2.set_xlabel("Mês do Ano", fontsize=11)
     ax2.set_ylabel("MAPE (%)", fontsize=11)
     ax2.grid(axis="y", linestyle="--", alpha=0.4)
@@ -664,7 +654,7 @@ def plot_erro_mensal(
     plt.tight_layout()
 
     if save_plot:
-        mape_path = out_dir / f"erro_sazonal_mape_{model_type}_h{horizonte}d.png"
+        mape_path = out_dir / f"erro_sazonal_mape_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(mape_path, dpi=150)
         plt.close(fig_mape)
         print(f"[evaluate] 2 Gráficos de Sazonalidade (MAE/MAPE) isolados salvos na pasta: {out_dir.name}/")

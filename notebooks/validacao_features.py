@@ -93,7 +93,9 @@ def analise_spearman(df_valid: pd.DataFrame, feature_cols: list, target_col: str
     ax.set_xlabel("Coeficiente rho de Spearman", fontsize=11)
     ax.tick_params(axis="y", labelsize=8)
     plt.tight_layout()
-    path = DATA_PROCESSED / f"spearman_h{horizonte}d.png"
+    out_dir = DATA_PROCESSED / "spearman"
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / f"spearman_h{horizonte}d.png"
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"\n[validacao] Grafico salvo: {path}")
@@ -153,7 +155,9 @@ def analise_permutation(X_df: pd.DataFrame, feature_cols: list, df_valid: pd.Dat
         ax.set_xlabel("Queda no MAE (media de 10 repeticoes)", fontsize=11)
         ax.tick_params(axis="y", labelsize=8)
         plt.tight_layout()
-        path = DATA_PROCESSED / f"permutation_importance_{model_type}_h{horizonte}d.png"
+        out_dir = DATA_PROCESSED / "permutation_importance"
+        out_dir.mkdir(exist_ok=True)
+        path = out_dir / f"permutation_importance_{model_type}_h{horizonte}d.png"
         plt.savefig(path, dpi=150)
         plt.close()
         print(f"[validacao] Grafico salvo: {path}")
