@@ -31,7 +31,6 @@ def predict_latest(dataframe_features: pd.DataFrame) -> pd.DataFrame:
 
     Usa a última linha (hoje) como vetor de features e retorna
     previsões para 1, 15, 30 e 60 dias à frente, por modelo.
-
     Parâmetros
     ----------
     dataframe_features : DataFrame com features (saída de build_features)
