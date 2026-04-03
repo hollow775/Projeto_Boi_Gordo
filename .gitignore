@@ -9,7 +9,6 @@ __pycache__/
 *.joblib
 *.pkl
 *.pth
-data/processed/
 
 # Pastas de IDE
 .vscode/
