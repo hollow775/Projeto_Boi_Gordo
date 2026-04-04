@@ -1,7 +1,7 @@
 # src/processing/merger.py
 # ==============================================================
 # Integra todas as fontes de dados em um único DataFrame diário.
-# Aplica deflação dos preços nominais pelo IPCA.
+# Aplica deflação dos preços nominais pelo índice de inflação configurado.
 # ==============================================================
 
 import pandas as pd
@@ -11,7 +11,7 @@ from src.collectors.cepea      import load_cepea
 from src.collectors.ibge_sidra import load_sidra
 from src.collectors.comexstat  import load_comexstat
 from src.collectors.copernicus import load_copernicus
-from src.collectors.bcb_ipca   import load_ipca_deflator
+from src.collectors.base_deflacionaria import load_inflation_deflator
 
 
 # Colunas de preço que devem ser deflacionadas
@@ -23,20 +23,20 @@ def _deflate_prices(df: pd.DataFrame) -> pd.DataFrame:
     Converte preços nominais em preços reais (base = DEFLATION_BASE).
 
     Fórmula:
-        preco_real = preco_nominal / (ipca_index / 100)
+        preco_real = preco_nominal / (inflation_index / 100)
 
-    Após deflação, mantém o índice IPCA no DataFrame para uso
+    Após deflação, mantém o índice de inflação no DataFrame para uso
     como feature (pode capturar contexto inflacionário).
     """
-    if "ipca_index" not in df.columns:
-        raise KeyError("Coluna 'ipca_index' ausente. Verifique o collector BCB.")
+    if "inflation_index" not in df.columns:
+        raise KeyError("Coluna 'inflation_index' ausente. Verifique o collector BCB.")
 
     for col in PRICE_COLUMNS:
         if col not in df.columns:
             continue
         nominal_col = f"{col}_nominal"
         df[nominal_col] = df[col].copy()  # mantém série nominal original
-        df[col] = df[col] / (df["ipca_index"] / 100)
+        df[col] = df[col] / (df["inflation_index"] / 100)
 
     print(f"[merger] Deflação aplicada. Base: {DEFLATION_BASE} = 100.")
     return df
@@ -55,7 +55,7 @@ def build_dataset(
     Parâmetros
     ----------
     include_*  : flags para incluir/excluir fontes (útil em testes)
-    deflate    : se True, aplica deflação IPCA nos preços
+    deflate    : se True, aplica deflação pelo índice configurado nos preços
 
     Retorna
     -------
@@ -80,8 +80,8 @@ def build_dataset(
         frames.append(load_copernicus())
 
     if deflate:
-        print("[merger] Carregando IPCA (BCB)...")
-        frames.append(load_ipca_deflator())
+        print("[merger] Carregando índice de inflação (BCB)...")
+        frames.append(load_inflation_deflator())
 
     if not frames:
         raise ValueError("Nenhuma fonte selecionada para o dataset.")

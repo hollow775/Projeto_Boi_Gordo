@@ -35,8 +35,8 @@ DATE_RANGE = {
 HORIZONS = [1, 15, 30, 60]
 
 # ── Deflação ───────────────────────────────────────────────────
-# Código da série IPCA no Banco Central (SGS 433)
-IPCA_SGS_CODE = 433
+# Código da série de inflação no Banco Central (SGS: 433 para IPCA, 190 para IGP-DI)
+INFLATION_SGS_CODE = 190
 # Mês de referência para deflação (formato YYYY-MM)
 DEFLATION_BASE = "2025-12"
 

@@ -1,7 +1,6 @@
-# src/collectors/bcb_ipca.py
+# src/collectors/base_deflacionaria.py
 # ==============================================================
-# Coleta o índice IPCA via API do Banco Central do Brasil (SGS).
-# Série 433 = IPCA mensal (% ao mês).
+# Coleta o índice de inflação (IPCA ou IGP-DI) via API do Banco Central do Brasil (SGS).
 #
 # Usado para deflacionar os preços nominais do CEPEA.
 # Documentação SGS: https://www.bcb.gov.br/estatisticas/tabelasespeciais
@@ -9,11 +8,11 @@
 
 import requests
 import pandas as pd
-from config.settings import DATE_RANGE, DEFLATION_BASE, IPCA_SGS_CODE, BCB_SGS_URL
+from config.settings import DATE_RANGE, DEFLATION_BASE, INFLATION_SGS_CODE, BCB_SGS_URL
 
 
-def _fetch_ipca_series() -> pd.Series:
-    url = BCB_SGS_URL.format(code=IPCA_SGS_CODE)
+def _fetch_inflation_series() -> pd.Series:
+    url = BCB_SGS_URL.format(code=INFLATION_SGS_CODE)
     params = {
         "formato":    "json",
         "dataInicial": pd.Timestamp(DATE_RANGE["start"]).strftime("%d/%m/%Y"),
@@ -47,7 +46,7 @@ def _build_price_index(series: pd.Series, base_period: str) -> pd.Series:
     base_date = pd.Timestamp(base_period + "-01")
     if base_date not in index.index:
         raise ValueError(
-            f"Período base '{base_period}' não encontrado na série IPCA. "
+            f"Período base '{base_period}' não encontrado na série de inflação. "
             "Verifique DEFLATION_BASE em config/settings.py."
         )
 
@@ -64,16 +63,16 @@ def _expand_to_daily(series: pd.Series, start: str, end: str) -> pd.Series:
     return series
 
 
-def load_ipca_deflator() -> pd.DataFrame:
+def load_inflation_deflator() -> pd.DataFrame:
     """
-    Retorna o índice IPCA diário para deflação de séries de preços.
+    Retorna o índice de inflação diário para deflação de séries de preços.
 
     Retorna
     -------
     pd.DataFrame com coluna:
-        ipca_index : índice encadeado (base = 100 em DEFLATION_BASE)
+        inflation_index : índice encadeado (base = 100 em DEFLATION_BASE)
     """
-    series = _fetch_ipca_series()
+    series = _fetch_inflation_series()
     index  = _build_price_index(series, DEFLATION_BASE)
 
     start = DATE_RANGE["start"]
@@ -82,10 +81,10 @@ def load_ipca_deflator() -> pd.DataFrame:
     index = index.loc[start:end]
     index = _expand_to_daily(index, start, end)
 
-    return index.rename("ipca_index").to_frame()
+    return index.rename("inflation_index").to_frame()
 
 
 if __name__ == "__main__":
-    df = load_ipca_deflator()
+    df = load_inflation_deflator()
     print(df.head(10))
-    print(f"\nÍndice no período base: {df.loc[DEFLATION_BASE + '-01', 'ipca_index']:.2f}")
+    print(f"\nÍndice no período base: {df.loc[DEFLATION_BASE + '-01', 'inflation_index']:.2f}")

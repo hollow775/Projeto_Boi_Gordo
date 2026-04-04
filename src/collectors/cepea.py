@@ -160,18 +160,18 @@ def save_cepea_xlsx(output_path: str | None = None) -> None:
     """
     Salva a serie combinada do CEPEA em Excel para inspecao visual.
     Util para verificar se os valores estao sendo lidos corretamente.
-    Inclui os dados do indice IPCA (Banco Central).
+    Inclui os dados do indice de inflação (Banco Central).
     """
     from config.settings import DATA_PROCESSED
-    from src.collectors.bcb_ipca import load_ipca_deflator
+    from src.collectors.base_deflacionaria import load_inflation_deflator
     
     df = load_cepea()
 
     try:
-        df_ipca = load_ipca_deflator()
-        df = df.join(df_ipca, how="left")
+        df_deflator = load_inflation_deflator()
+        df = df.join(df_deflator, how="left")
     except Exception as e:
-        print(f"[cepea] Aviso: não foi possível anexar o IPCA: {e}")
+        print(f"[cepea] Aviso: não foi possível anexar o índice de inflação: {e}")
 
     path = output_path or str(DATA_PROCESSED / "cepea_combinado_inspecao.xlsx")
 
