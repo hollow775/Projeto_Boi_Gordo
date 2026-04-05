@@ -39,26 +39,37 @@ def _parse_sidra_response(data: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(records)
     df = df.rename(columns={
         "D3C": "periodo",      # Trimestre (ex: "201001")
+        "D4N": "mes_ref",      # "No 1º mês"
         "V":   "valor",
         "D2N": "variavel",
     })
 
+    # Se a consulta na API não pediu a quebra mensal, preenche default
+    if "mes_ref" not in df.columns:
+        df["mes_ref"] = "No 1º mês"
+
     # Mantém apenas colunas relevantes
-    df = df[["periodo", "variavel", "valor"]].copy()
+    df = df[["periodo", "mes_ref", "variavel", "valor"]].copy()
 
     # Filtra valores não numéricos (SIDRA retorna "-" para ausência)
     df = df[df["valor"].str.match(r"^[\d,.-]+$", na=False)]
     df["valor"] = df["valor"].str.replace(",", ".").astype(float)
 
-    # Converte período trimestral (YYYYTT) para data
-    # SIDRA usa formato: 201001 = 1º trimestre 2010
-    def trimestre_to_date(s: str) -> pd.Timestamp:
-        year = int(s[:4])
-        quarter = int(s[4:])
-        month = (quarter - 1) * 3 + 1
+    def convert_sidra_date(row) -> pd.Timestamp:
+        year_str = str(row["periodo"])
+        year = int(year_str[:4])
+        quarter = int(year_str[4:])
+        
+        # Extrai de "No 1º mês" -> 1. Se falhar, assume 1.
+        import re
+        m = re.search(r'(\d+)º', str(row["mes_ref"]))
+        inner_month = int(m.group(1)) if m else 1
+        
+        # Trimestre 1 -> meses 1,2,3...
+        month = (quarter - 1) * 3 + inner_month
         return pd.Timestamp(year=year, month=month, day=1)
 
-    df["data"] = df["periodo"].apply(trimestre_to_date)
+    df["data"] = df.apply(convert_sidra_date, axis=1)
 
     # Pivot: uma coluna por variável
     df_pivot = df.pivot_table(

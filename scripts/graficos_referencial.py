@@ -65,13 +65,14 @@ df_sidra = load_sidra()
 preco_boi = df_cepea["preco_boi_gordo"].resample("MS").mean().dropna()
 preco_bez = df_cepea["preco_bezerro"].resample("MS").mean().dropna()
 
-# Abate trimestral - transformando num interpolation (no index MS) para plotar como linha:
-abate_col = df_sidra["abate_cabecas"]
+# Abate mensal - usando index "MS" para plotar como linha:
+abate_col = df_sidra["abate_peso_ton"]
 if isinstance(abate_col, pd.DataFrame):
    abate_col = abate_col.iloc[:, 0]
 
-abate_trim = abate_col.resample("QS").first().dropna()
-abate_trim_mil = (abate_trim / 1_000).astype(float)
+abate_mensal = abate_col.resample("MS").first().dropna()
+# Valores em quilogramas -> converte para mil toneladas ( / 1_000_000 )
+abate_mensal_mil_ton = (abate_mensal / 1_000_000).astype(float)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -84,13 +85,13 @@ fig, ax1 = plt.subplots(figsize=(13, 5.5))
 
 # ── Linha: abate de fêmeas (eixo esquerdo) ─────────────────
 ax1.plot(
-    abate_trim_mil.index,
-    abate_trim_mil.values,
+    abate_mensal_mil_ton.index,
+    abate_mensal_mil_ton.values,
     color=COR_FEMEA,
     linewidth=2.2,
     zorder=3,
 )
-ax1.set_ylabel("Abate de fêmeas (mil cabeças)", color=COR_FEMEA, fontsize=11, labelpad=8)
+ax1.set_ylabel("Peso de carcaças (mil toneladas)", color=COR_FEMEA, fontsize=11, labelpad=8)
 ax1.tick_params(axis="y", colors=COR_FEMEA, labelsize=10)
 ax1.spines["left"].set_color(COR_FEMEA)
 ax1.spines["right"].set_visible(False)
@@ -132,18 +133,12 @@ ax1.set_title(
 )
 
 handles = [
-    Line2D([0], [0], color=COR_FEMEA, linewidth=2.2, label="Abate de fêmeas (mil cabeças/trimestre)"),
+    Line2D([0], [0], color=COR_FEMEA, linewidth=2.2, label="Peso abate fêmeas (mil toneladas/mês)"),
     Line2D([0], [0], color=COR_BOI, linewidth=2.2, label="Preço boi gordo (R$/arroba)"),
 ]
 ax1.legend(handles=handles, loc="upper left", frameon=False, fontsize=10)
 
-ax1.text(
-    0.99, 0.02,
-    "Fonte: IBGE/SIDRA e CEPEA/ESALQ",
-    transform=ax1.transAxes,
-    ha="right", va="bottom",
-    fontsize=8.5, color="gray", style="italic",
-)
+
 
 fig.tight_layout(pad=1.5)
 p1 = SAVE_DIR / "abate_femeas_vs_preco_boi.png"
@@ -193,13 +188,7 @@ ax_top.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 ax_top.tick_params(axis="x", labelsize=10)
 ax_top.set_xlabel("Período", fontsize=11, labelpad=6)
 
-ax_top.text(
-    0.99, 0.05,
-    "Fonte: CEPEA/ESALQ",
-    transform=ax_top.transAxes,
-    ha="right", va="bottom",
-    fontsize=8.5, color="gray", style="italic",
-)
+
 
 fig.tight_layout(pad=1.5)
 p2 = SAVE_DIR / "precos_boi_bezerro.png"
@@ -252,13 +241,8 @@ ax_bot.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 ax_bot.tick_params(axis="x", labelsize=10)
 ax_bot.set_xlabel("Período", fontsize=11, labelpad=6)
 
-ax_bot.text(
-    0.99, 0.05,
-    "Fonte: CEPEA/ESALQ",
-    transform=ax_bot.transAxes,
-    ha="right", va="bottom",
-    fontsize=8.5, color="gray", style="italic",
-)
+ax_bot.set_ylim(top=ratio.max() * 1.15)
+
 
 fig.tight_layout(pad=1.5)
 p3 = SAVE_DIR / "relacao_troca_boi_bezerro.png"

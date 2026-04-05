@@ -52,11 +52,11 @@ COMEX_NCM_CODES = ["0201", "0202"]   # in natura; processada
 COMEX_API_URL = "https://api-comexstat.mdic.gov.br/general"
 
 # ── SIDRA IBGE ─────────────────────────────────────────────────
-# Tabela 1092 — Abate de animais, variável 284 (cabeças) e 1000284 (peso)
+# Tabela 1092 — Abate de animais (nova URL via demanda do usuário)
 SIDRA_URL = (
-    "https://apisidra.ibge.gov.br/values/t/1092/n3/{state_code}"
-    "/v/284,1000284/p/all/c12716/allxt/c18/56/c12529/111738/d/v1000284%202"
+    "https://apisidra.ibge.gov.br/values/t/1092/n1/all/v/285/p/last%2064/c12716/allxt/c18/56/c12529/118225"
 )
 
 # ── Banco Central ──────────────────────────────────────────────
 BCB_SGS_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados"
+BCB_PTAX_URL = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='{start}'&@dataFinalCotacao='{end}'&$format=json"

@@ -4,6 +4,11 @@
 # Aplica deflação dos preços nominais pelo índice de inflação configurado.
 # ==============================================================
 
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
 import pandas as pd
 from config.settings import DEFLATION_BASE
 
@@ -11,6 +16,7 @@ from src.collectors.cepea      import load_cepea
 from src.collectors.ibge_sidra import load_sidra
 from src.collectors.comexstat  import load_comexstat
 from src.collectors.copernicus import load_copernicus
+from src.collectors.bcb_ptax   import load_ptax
 from src.collectors.base_deflacionaria import load_inflation_deflator
 
 
@@ -47,6 +53,7 @@ def build_dataset(
     include_sidra:      bool = True,
     include_comexstat:  bool = True,
     include_copernicus: bool = True,
+    include_ptax:       bool = True,
     deflate:            bool = True,
 ) -> pd.DataFrame:
     """
@@ -78,6 +85,10 @@ def build_dataset(
     if include_copernicus:
         print("[merger] Carregando ERA5 (Copernicus)...")
         frames.append(load_copernicus())
+
+    if include_ptax:
+        print("[merger] Carregando Dólar PTAX (BCB)...")
+        frames.append(load_ptax())
 
     if deflate:
         print("[merger] Carregando índice de inflação (BCB)...")
