@@ -232,7 +232,7 @@ def plot_previsao_vs_real(
     )
     ax.set_xlabel("Data", fontsize=11)
     ax.set_ylabel("Preço (R$/arroba, preço real)", fontsize=11)
-    ax.legend(fontsize=10, loc="upper left")
+    ax.legend(fontsize=12, loc="upper left")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.tick_params(axis="x", rotation=30)
 
@@ -301,7 +301,7 @@ def plot_metricas_por_horizonte(
     ax.set_ylabel("MAPE Médio (%)", fontsize=11)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{h} dias" for h in horizontes], fontsize=11)
-    ax.legend(fontsize=10)
+    ax.legend(fontsize=12)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.set_ylim(0, max(max(mapes_xgboost), max(mapes_random_forest)) * 1.2)
 
@@ -418,7 +418,7 @@ def plot_walk_forward_folds(
     ax.set_yticklabels(y_ticklabels, fontsize=10, fontweight="bold")
     ax.xaxis_date()
     fig.autofmt_xdate(rotation=30)
-    ax.legend(fontsize=9, loc="upper right", framealpha=0.9)
+    ax.legend(fontsize=11.5, loc="upper right", framealpha=0.9)
     ax.grid(axis="x", linestyle="--", alpha=0.3)
     ax.set_xlim(
         datas[0] - pd.Timedelta(days=60),
@@ -493,7 +493,7 @@ def plot_analise_residuos(
     ax_scatter.set_title(f"Valor Real vs. Previsão ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_scatter.set_xlabel("Valor Real Observado (R$/arroba)", fontsize=10)
     ax_scatter.set_ylabel("Valor Previsto pelo Modelo (R$/arroba)", fontsize=10)
-    ax_scatter.legend()
+    ax_scatter.legend(fontsize=11)
     ax_scatter.grid(True, linestyle="--", alpha=0.4)
     plt.tight_layout()
 
@@ -519,7 +519,7 @@ def plot_analise_residuos(
     ax_hist.set_title(f"Distribuição dos Resíduos ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_hist.set_xlabel("Resíduo (Real - Previsto)", fontsize=10)
     ax_hist.set_ylabel("Densidade", fontsize=10)
-    ax_hist.legend()
+    ax_hist.legend(fontsize=11)
     ax_hist.grid(True, linestyle="--", alpha=0.4)
     plt.tight_layout()
 
@@ -539,7 +539,7 @@ def plot_analise_residuos(
     ax_time.set_title(f"Comportamento Residual Histórico ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax_time.set_xlabel("Data", fontsize=10)
     ax_time.set_ylabel("Erro (R$ na arroba)", fontsize=10)
-    ax_time.legend(loc="upper right")
+    ax_time.legend(fontsize=11, loc="upper right")
     ax_time.grid(True, linestyle="--", alpha=0.4)
     fig_time.autofmt_xdate(rotation=30)
     plt.tight_layout()

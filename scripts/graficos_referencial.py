@@ -136,7 +136,7 @@ handles = [
     Line2D([0], [0], color=COR_FEMEA, linewidth=2.2, label="Peso abate fêmeas (mil toneladas/mês)"),
     Line2D([0], [0], color=COR_BOI, linewidth=2.2, label="Preço boi gordo (R$/arroba)"),
 ]
-ax1.legend(handles=handles, loc="upper left", frameon=False, fontsize=10)
+ax1.legend(handles=handles, loc="upper left", frameon=False, fontsize=12)
 
 
 
@@ -180,7 +180,7 @@ ax_top.set_title(
     fontsize=13, fontweight="bold", pad=14,
 )
 
-ax_top.legend(loc="upper left", frameon=False, fontsize=10)
+ax_top.legend(loc="upper left", frameon=False, fontsize=12)
 
 ax_top.xaxis.set_major_locator(mdates.YearLocator(2))
 ax_top.xaxis.set_minor_locator(mdates.YearLocator(1))
@@ -233,7 +233,7 @@ ax_bot.tick_params(axis="y", labelsize=10)
 ax_bot.yaxis.set_major_formatter(
     mticker.FuncFormatter(lambda x, _: f"{x:.1f}")
 )
-ax_bot.legend(loc="upper left", frameon=False, fontsize=9)
+ax_bot.legend(loc="upper left", frameon=False, fontsize=12)
 
 ax_bot.xaxis.set_major_locator(mdates.YearLocator(2))
 ax_bot.xaxis.set_minor_locator(mdates.YearLocator(1))
