@@ -345,6 +345,9 @@ def plot_walk_forward_folds(
 
     fig, ax = plt.subplots(figsize=(14, 5))
 
+    y_ticks = []
+    y_ticklabels = []
+
     for i in range(N_FOLDS):
         train_end = MIN_TRAIN_DAYS + i * test_size
         test_end  = min(train_end + test_size, n)
@@ -381,13 +384,8 @@ def plot_walk_forward_folds(
         )
 
         # Rotulo do fold no eixo y
-        ax.text(
-            treino_inicio - pd.Timedelta(days=30),
-            y_pos,
-            f"Fold {fold_num}",
-            va="center", ha="right",
-            fontsize=10, fontweight="bold",
-        )
+        y_ticks.append(y_pos)
+        y_ticklabels.append(f"Fold {fold_num}")
 
         # Rotulo de data de inicio do treino (apenas fold 1)
         if i == 0:
@@ -400,24 +398,27 @@ def plot_walk_forward_folds(
             )
 
         # Rotulo de data dentro da barra de teste
+        MESES_PT = {1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun", 7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"}
+        lbl_inicio = f"{MESES_PT[teste_inicio.month]}/{teste_inicio.year}"
+        lbl_fim    = f"{MESES_PT[teste_fim.month]}/{teste_fim.year}"
         ax.text(
             teste_inicio + (teste_fim - teste_inicio) / 2,
             y_pos,
-            f"{teste_inicio.strftime('%b/%Y')} – {teste_fim.strftime('%b/%Y')}",
+            f"{lbl_inicio} – {lbl_fim}",
             va="center", ha="center",
             fontsize=8.5, color="white", fontweight="bold",
         )
 
     ax.set_title(
-        "Estrutura de Validação Walk-Forward — Expanding Window"
-        f"{N_FOLDS} Folds | Treino mínimo: {MIN_TRAIN_DAYS} dias",
+        "Estrutura de validação walk-forward",
         fontsize=13, fontweight="bold",
     )
     ax.set_xlabel("Data", fontsize=11)
-    ax.set_yticks([])
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_ticklabels, fontsize=10, fontweight="bold")
     ax.xaxis_date()
     fig.autofmt_xdate(rotation=30)
-    ax.legend(fontsize=9, loc="lower right", framealpha=0.9)
+    ax.legend(fontsize=9, loc="upper right", framealpha=0.9)
     ax.grid(axis="x", linestyle="--", alpha=0.3)
     ax.set_xlim(
         datas[0] - pd.Timedelta(days=60),
@@ -439,9 +440,9 @@ def plot_walk_forward_folds(
 
 
 def plot_analise_residuos(
-    train_results: dict,
-    horizonte: int = 1,
-    model_type: str = "xgb",
+    resultados_treinamento: dict,
+    horizonte_dias: int = 1,
+    tipo_modelo: str = "xgboost",
     data_inicio: str = "2024-01-01",
     save_plot: bool = True,
 ) -> None:
@@ -619,9 +620,10 @@ def plot_erro_mensal(
     # ==========================================
     fig_mae, ax1 = plt.subplots(figsize=(10, 5))
     bars1 = ax1.bar(x_labels, mae_vals, color="#a37638", alpha=0.9, edgecolor="black")
-    ax1.set_title(f"Erro Absoluto Médio Histórico (MAE) por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
+    ax1.set_title(f"MAE por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax1.set_xlabel("Mês do Ano", fontsize=11)
     ax1.set_ylabel("MAE (R$/arroba)", fontsize=11)
+    ax1.set_ylim(0, max(mae_vals) * 1.15)
     ax1.grid(axis="y", linestyle="--", alpha=0.4)
     for bar in bars1:
         h_val = bar.get_height()
@@ -642,9 +644,10 @@ def plot_erro_mensal(
     # ==========================================
     fig_mape, ax2 = plt.subplots(figsize=(10, 5))
     bars2 = ax2.bar(x_labels, mape_vals, color="#3864a3", alpha=0.9, edgecolor="black")
-    ax2.set_title(f"Erro Percentual Absoluto (MAPE) por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
+    ax2.set_title(f"MAPE por Mês — {model_label}\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
     ax2.set_xlabel("Mês do Ano", fontsize=11)
     ax2.set_ylabel("MAPE (%)", fontsize=11)
+    ax2.set_ylim(0, max(mape_vals) * 1.15)
     ax2.grid(axis="y", linestyle="--", alpha=0.4)
     for bar in bars2:
         h_val = bar.get_height()
