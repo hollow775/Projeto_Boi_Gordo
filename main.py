@@ -131,7 +131,7 @@ def step_predict(df: pd.DataFrame) -> None:
     preds = predict_latest(df)
 
     print("\n" + "=" * 60)
-    print("PREVISÕES — PREÇO DO BOI GORDO (R$/arroba, preço real)")
+    print("PREVISOES -- PRECO DO BOI GORDO (R$/arroba, preco real)")
     print("=" * 60)
     print(preds.to_string(index=False))
     print("=" * 60)

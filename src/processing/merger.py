@@ -109,7 +109,7 @@ def build_dataset(
         df = _deflate_prices(df)
 
     print(f"[merger] Dataset integrado. Shape: {df.shape}")
-    print(f"[merger] Período: {df.index.min().date()} → {df.index.max().date()}")
+    print(f"[merger] Período: {df.index.min().date()} -> {df.index.max().date()}")
 
     return df
 

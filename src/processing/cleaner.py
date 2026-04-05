@@ -7,7 +7,7 @@ import numpy as np
 # Precos CEPEA sao validados separadamente apos inspecao da serie.
 DOMAIN_BOUNDS = {
     "abate_cabecas":    (1e3,   1e7),
-    "abate_peso_ton":   (1e2,   1e6),
+    "abate_peso_ton":   (1e2,   1e9),
     "export_usd_fob":   (0,     1e11),
     "export_kg":        (0,     1e10),
     "precipitacao_mm":  (0,     3000),

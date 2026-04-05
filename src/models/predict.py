@@ -47,7 +47,11 @@ def predict_latest(dataframe_features: pd.DataFrame) -> pd.DataFrame:
         feature_cols = _load_feature_cols(horizonte_dias)
 
         # Última linha com todas as features preenchidas
-        row = dataframe_features[feature_cols].dropna().iloc[[-1]]
+        valid_rows = dataframe_features[feature_cols].dropna()
+        if len(valid_rows) == 0:
+            print(f"DEBUG: valid_rows is empty for h={horizonte_dias}! NaNs por coluna:")
+            print(dataframe_features[feature_cols].isna().sum().sort_values().tail(15))
+        row = valid_rows.iloc[[-1]]
 
         X = row.values
 

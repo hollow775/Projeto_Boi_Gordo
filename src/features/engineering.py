@@ -32,9 +32,10 @@ LAG_FEATURES = [
     "preco_boi_gordo",
     "preco_bezerro",
     "preco_milho",
-    "abate_cabecas",
+    "abate_peso_ton",
     "export_usd_fob",
     "precipitacao_mm",
+    "cotacao_dolar_venda",
 ]
 
 
