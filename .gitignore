@@ -13,3 +13,13 @@ __pycache__/
 # Pastas de IDE
 .vscode/
 .idea/ 
+
+# Artefatos gerados (não versionar)
+data/processed/
+.omx/
+# Relatórios/MD gerados pelo pipeline dentro de processed
+data/processed/**/*.md
+.json
+.csv
+.pyc
+.log
