@@ -32,7 +32,7 @@ DATE_RANGE = {
 }
 
 # ── Horizontes de previsão (dias corridos) ─────────────────────
-HORIZONS = [1, 15, 30, 60]
+HORIZONS = [1, 7, 15, 30, 60]
 
 # ── Deflação ───────────────────────────────────────────────────
 # Código da série de inflação no Banco Central (SGS: 433 para IPCA, 190 para IGP-DI)

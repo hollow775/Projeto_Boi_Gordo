@@ -158,8 +158,15 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = _ratio_features(df)
     df = _build_targets(df)
 
+    target_cols = [c for c in df.columns if c.startswith("target_h")]
+    feature_count = df.shape[1] - len(target_cols)
+
     print(f"[features] Feature engineering concluída. Shape: {df.shape}")
-    print(f"[features] Total de features: {df.shape[1] - len(HORIZONS)}")
+    print(
+        "[features] Totais -> "
+        f"features: {feature_count} | targets: {len(target_cols)} "
+        f"| horizontes: {HORIZONS}"
+    )
 
     return df
 
@@ -174,7 +181,7 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
         - colunas _nominal (redundantes após deflação)
         - colunas target_h*
     """
-    exclude_patterns = ["target_h", "_nominal", "ipca_index"]
+    exclude_patterns = ["target_h", "_nominal", "ipca_index", "baseline_"]
     # preco_boi_gordo sem lag seria leakage — excluir a coluna original
     direct_exclude = ["preco_boi_gordo"]
 

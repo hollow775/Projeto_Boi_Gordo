@@ -22,6 +22,60 @@ from src.collectors.base_deflacionaria import load_inflation_deflator
 
 # Colunas de preço que devem ser deflacionadas
 PRICE_COLUMNS = ["preco_boi_gordo", "preco_bezerro", "preco_milho"]
+# Séries de frequência mensal (ou inferior) que só ficam disponíveis
+# ao fim do mês → aplicar lag mensal antes de expandir para frequência diária
+# para evitar vazamento de informação (leakage).
+MONTHLY_COLUMNS = [
+    "inflation_index",  # IPCA/IGP encadeado – divulgado mensalmente
+    "precipitacao_mm",  # ERA5 mensal
+    "export_usd_fob",   # ComexStat mensal
+    "export_kg",
+    "abate_cabecas",    # SIDRA trimestral → tratado como mensal para lag
+    "abate_peso_ton",
+]
+MONTHLY_LAG_MONTHS = 1
+HOLDOUT_CUTOFF = pd.Timestamp("2025-12-31")
+
+
+def _lag_monthly_then_ffill(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aplica lag mensal (+1m) nas séries mensais/trimestrais e só então
+    expande para frequência diária via forward fill, evitando leakage
+    intra-mês.
+    """
+    if not isinstance(df.index, pd.DatetimeIndex):
+        return df
+
+    touched = []
+    for col in MONTHLY_COLUMNS:
+        if col not in df.columns:
+            continue
+        monthly = df[col].resample("MS").first()
+        lagged  = monthly.shift(MONTHLY_LAG_MONTHS)
+        df[col] = lagged.reindex(df.index, method="ffill")
+        touched.append(col)
+
+    if touched:
+        print(f"[merger] Lag mensal (+{MONTHLY_LAG_MONTHS}m) aplicado e forward fill diário em: {touched}")
+    return df
+
+
+def _annotate_holdout(df: pd.DataFrame, cutoff: pd.Timestamp = HOLDOUT_CUTOFF) -> pd.DataFrame:
+    """
+    Armazena o trecho de holdout (datas > cutoff) em attrs para uso
+    posterior (plots), sem removê-lo aqui.
+    """
+    if not isinstance(df.index, pd.DatetimeIndex):
+        return df
+
+    df.attrs["holdout_cutoff"] = cutoff
+    if df.index.max() > cutoff:
+        holdout_tail = df.loc[df.index > cutoff].copy()
+        df.attrs["holdout_tail"] = holdout_tail
+        print(f"[merger] Holdout identificado: {len(holdout_tail)} linhas após {cutoff.date()} armazenadas em attrs['holdout_tail'].")
+    else:
+        df.attrs["holdout_tail"] = pd.DataFrame(columns=df.columns)
+    return df
 
 
 def _deflate_prices(df: pd.DataFrame) -> pd.DataFrame:
@@ -108,8 +162,15 @@ def build_dataset(
     if deflate:
         df = _deflate_prices(df)
 
+    # Após deflação, aplica lag mensal e forward fill diário nas séries
+    # de baixa frequência para evitar leakage intra-mês nos modelos.
+    df = _lag_monthly_then_ffill(df)
+
+    df = _annotate_holdout(df, cutoff=HOLDOUT_CUTOFF)
+
     print(f"[merger] Dataset integrado. Shape: {df.shape}")
-    print(f"[merger] Período: {df.index.min().date()} -> {df.index.max().date()}")
+    # Evita caractere Unicode não suportado em consoles cp1252
+    print(f"[merger] Periodo: {df.index.min().date()} -> {df.index.max().date()}")
 
     return df
 

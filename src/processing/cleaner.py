@@ -2,6 +2,8 @@
 import pandas as pd
 import numpy as np
 
+HOLDOUT_CUTOFF = pd.Timestamp("2025-12-31")
+
 
 # Limites de dominio apenas para variaveis nao-preco.
 # Precos CEPEA sao validados separadamente apos inspecao da serie.
@@ -105,14 +107,27 @@ def _report_missing(df: pd.DataFrame) -> None:
             print(f"  {col}: {int(n)} ({int(n)/total*100:.2f}%)")
 
 
-def clean(df: pd.DataFrame, max_gap: int = 7) -> pd.DataFrame:
+def clean(
+    df: pd.DataFrame,
+    max_gap: int = 7,
+    train_cutoff: str | pd.Timestamp = HOLDOUT_CUTOFF,
+    exclude_holdout: bool = True,
+) -> pd.DataFrame:
     """
     Pipeline de limpeza:
         1. Remove indice duplicado
         2. Valida limites de dominio (variaveis nao-preco)
         3. Exibe estatisticas de preco para inspecao
         4. Interpola gaps pequenos
+
+    Parametros
+    ----------
+    df : DataFrame integrado
+    max_gap : tamanho maximo do gap (dias) para interpolacao
+    train_cutoff : datas posteriores sao consideradas holdout (nao devem entrar em treino)
+    exclude_holdout : se True, retorna apenas ate o cutoff e guarda tail em attrs['holdout_tail']
     """
+    cutoff = pd.Timestamp(train_cutoff)
     print(f"[cleaner] Iniciando limpeza. Shape: {df.shape}")
 
     # Elimina colunas duplicadas — ocorre quando fontes compartilham nomes
@@ -126,6 +141,29 @@ def clean(df: pd.DataFrame, max_gap: int = 7) -> pd.DataFrame:
     _report_prices(df)
     df = _fill_missing(df, max_gap=max_gap)
     _report_missing(df)
+
+    # Se existir holdout alem do cutoff, guarda para plots e (opcionalmente) remove do output
+    holdout_tail = None
+    if isinstance(df.index, pd.DatetimeIndex):
+        mask_holdout = df.index > cutoff
+        if mask_holdout.any():
+            holdout_tail = df.loc[mask_holdout].copy()
+            df.attrs["holdout_cutoff"] = cutoff
+            df.attrs["holdout_tail"] = holdout_tail
+            if exclude_holdout:
+                df = df.loc[~mask_holdout]
+                print(
+                    f"[cleaner] Holdout (> {cutoff.date()}) removido do dataset de treino "
+                    f"({len(holdout_tail)} linhas). Segmento armazenado em attrs['holdout_tail'] para plots."
+                )
+            else:
+                print(
+                    f"[cleaner] Holdout (> {cutoff.date()}) mantido no DataFrame final "
+                    f"({len(holdout_tail)} linhas)."
+                )
+        else:
+            df.attrs["holdout_cutoff"] = cutoff
+            df.attrs["holdout_tail"] = pd.DataFrame(columns=df.columns)
 
     print(f"[cleaner] Limpeza concluida. Shape final: {df.shape}")
     return df

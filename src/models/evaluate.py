@@ -6,13 +6,23 @@
 
 import matplotlib
 matplotlib.use("Agg")  # backend sem GUI
+import matplotlib.pyplot as plt
+plt.rcParams["font.family"] = "DejaVu Sans"
+plt.rcParams["axes.unicode_minus"] = False
+
 import pandas as pd
 import numpy as np
 import joblib
-import matplotlib.pyplot as plt
 from pathlib import Path
-from config.settings import HORIZONS, MODELS_DIR, DATA_PROCESSED
+from typing import Optional
+from config.settings import MODELS_DIR, DATA_PROCESSED
 from src.features.engineering import get_feature_columns
+from src.models.train import (
+    _walk_forward_splits,
+    _compute_metrics,
+    MIN_TRAIN_DAYS,
+    N_FOLDS,
+)
 
 
 def _load_model(model_type: str, horizon: int):
@@ -30,6 +40,118 @@ def _load_feature_cols(horizon: int) -> list[str]:
     return joblib.load(path)
 
 
+METRICAS_PATH = DATA_PROCESSED / "metricas.csv"
+ADD_TITLES = False  # desabilita títulos nos gráficos (serão adicionados no artigo)
+
+
+def _maybe_title(ax, text: str):
+    if ADD_TITLES:
+        ax.set_title(text, fontsize=12, fontweight="bold")
+
+from matplotlib.axes import Axes as _Axes
+_orig_set_title = _Axes.set_title
+def _set_title_noop(self, *args, **kwargs):
+    if ADD_TITLES:
+        return _orig_set_title(self, *args, **kwargs)
+    return self
+_Axes.set_title = _set_title_noop
+
+def _available_horizons(resultados_treinamento: dict) -> list[int]:
+    """Retorna lista ordenada de horizontes presentes nos resultados."""
+    return sorted([int(h) for h in resultados_treinamento.keys()])
+
+
+def _prediction_column(tipo_modelo: str) -> str:
+    return {
+        "xgboost": "previsao_xgboost",
+        "random_forest": "previsao_random_forest",
+        "baseline": "previsao_baseline",
+    }.get(tipo_modelo, f"previsao_{tipo_modelo}")
+
+
+def compute_baseline_walk_forward(
+    dataframe_dados: pd.DataFrame,
+    horizonte_dias: int,
+) -> tuple[list[dict], pd.DataFrame]:
+    """
+    Calcula mÃ©tricas walk-forward para um baseline de persistÃªncia
+    (usa o valor atual como previsÃ£o do futuro), evitando leakage.
+
+    Retorna lista de mÃ©tricas por fold e DataFrame OOF com previsÃµes.
+    """
+    target_col = f"target_h{horizonte_dias}d"
+    if target_col not in dataframe_dados.columns:
+        raise KeyError(f"Coluna {target_col} ausente â€” nÃ£o foi possÃ­vel gerar baseline.")
+    if "preco_boi_gordo" not in dataframe_dados.columns:
+        raise KeyError("Coluna preco_boi_gordo ausente para baseline.")
+
+    df_valid = dataframe_dados.dropna(subset=[target_col]).copy()
+    if df_valid.empty:
+        raise ValueError("Dataset vazio apÃ³s remoÃ§Ã£o de NaN no target.")
+
+    y_true_full = df_valid[target_col].values
+    baseline_pred_full = df_valid["preco_boi_gordo"].values  # valor corrente como previsÃ£o futura
+
+    splits = _walk_forward_splits(
+        len(df_valid),
+        min_train=MIN_TRAIN_DAYS,
+        n_folds=N_FOLDS,
+    )
+
+    metricas_baseline = []
+    datas_oof, y_oof, preds_oof = [], [], []
+
+    for train_idx, test_idx in splits:
+        y_test = y_true_full[test_idx]
+        y_pred = baseline_pred_full[test_idx]
+        metricas_baseline.append(_compute_metrics(y_test, y_pred))
+
+        datas_oof.extend(df_valid.index[test_idx])
+        y_oof.extend(y_test)
+        preds_oof.extend(y_pred)
+
+    out_of_fold_df = pd.DataFrame(
+        {"y_true": y_oof, "previsao_baseline": preds_oof},
+        index=datas_oof,
+    )
+    return metricas_baseline, out_of_fold_df
+
+
+def add_baseline_to_results(
+    resultados_treinamento: dict,
+    dataframe_dados: Optional[pd.DataFrame],
+) -> dict:
+    """
+    Anexa mÃ©tricas e previsÃµes OOF do baseline aos resultados existentes.
+    NÃ£o altera train.py; computa baseline somente com dados OOF para evitar leakage.
+    """
+    if dataframe_dados is None:
+        return resultados_treinamento
+
+    for horizonte_dias, resultado in resultados_treinamento.items():
+        try:
+            metricas_baseline, baseline_oof = compute_baseline_walk_forward(
+                dataframe_dados,
+                horizonte_dias,
+            )
+        except Exception as e:
+            print(f"[evaluate] Aviso baseline h{horizonte_dias}d: {e}")
+            continue
+
+        resultado["metricas_cv_baseline"] = metricas_baseline
+
+        oof_df = resultado.get("out_of_fold_dataframe", pd.DataFrame()).copy()
+        if not oof_df.empty:
+            baseline_alinhado = baseline_oof["previsao_baseline"].reindex(oof_df.index)
+            if baseline_alinhado.isna().any():
+                # Caso ordem difira, faz merge seguro por Ã­ndice
+                baseline_alinhado = baseline_oof.reindex(oof_df.index)["previsao_baseline"]
+            oof_df["previsao_baseline"] = baseline_alinhado
+            resultado["out_of_fold_dataframe"] = oof_df
+
+    return resultados_treinamento
+
+
 def metrics_summary(resultados_treinamento: dict) -> pd.DataFrame:
     """
     Consolida as métricas walk-forward num único DataFrame tidy.
@@ -40,14 +162,25 @@ def metrics_summary(resultados_treinamento: dict) -> pd.DataFrame:
     """
     rows = []
     for horizonte_dias, result in resultados_treinamento.items():
-        for model_name, cv_key in [("XGBoost", "metricas_cv_xgboost"), ("RandomForest", "metricas_cv_random_forest")]:
+        model_keys = [
+            ("XGBoost", "metricas_cv_xgboost"),
+            ("RandomForest", "metricas_cv_random_forest"),
+        ]
+        if "metricas_cv_baseline" in result:
+            model_keys.append(("Baseline", "metricas_cv_baseline"))
+
+        for model_name, cv_key in model_keys:
+            if cv_key not in result:
+                continue
             for fold_idx, metrics in enumerate(result[cv_key]):
-                rows.append({
-                    "horizonte_dias": horizonte_dias,
-                    "modelo":         model_name,
-                    "fold":           fold_idx + 1,
-                    **metrics,
-                })
+                rows.append(
+                    {
+                        "horizonte_dias": horizonte_dias,
+                        "modelo": model_name,
+                        "fold": fold_idx + 1,
+                        **metrics,
+                    }
+                )
 
     dataframe_metricas = pd.DataFrame(rows)
     return dataframe_metricas
@@ -66,6 +199,15 @@ def metrics_mean(resultados_treinamento: dict) -> pd.DataFrame:
         .reset_index()
     )
     return summary
+
+
+def export_metricas_csv(resultados_treinamento: dict, path: Path = METRICAS_PATH) -> Path:
+    """Salva tabela consolidada de métricas (média por horizonte/modelo) em CSV."""
+    df_metricas = metrics_mean(resultados_treinamento)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df_metricas.to_csv(path, index=False)
+    print(f"[evaluate] Métricas consolidadas salvas em: {path}")
+    return path
 
 
 def feature_importance(
@@ -103,9 +245,9 @@ def feature_importance(
     if save_plot:
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.barh(dataframe_importances["feature"][::-1], dataframe_importances["importance"][::-1])
-        ax.set_title(
+        _maybe_title(
+            ax,
             f"Importância das Variáveis — {model_label} | Horizonte: {horizonte_dias} dias",
-            fontsize=13, fontweight="bold",
         )
         ax.set_xlabel("Importância", fontsize=11)
         ax.set_ylabel("Variável", fontsize=11)
@@ -159,29 +301,20 @@ def plot_previsao_vs_real(
     resultados_treinamento: dict,
     tipo_modelo: str = "xgboost",
     data_inicio: str = "2025-11-01",
+    horizonte_dias: Optional[int] = None,
     save_plot: bool = True,
 ) -> None:
     """
-    Gera grafico de previsao vs. valor real para todos os horizontes.
+    Gera grafico de previsao vs. valor real para um ou todos os horizontes.
 
-    Cada horizonte e plotado como uma linha tracejada colorida.
-    O valor real do boi gordo e plotado em preto como referencia.
-
-    Parametros
-    ----------
-    dataframe_dados : DataFrame original
-    tipo_modelo     : 'xgboost' ou 'random_forest'
-    data_inicio     : data de inicio do grafico (formato YYYY-MM-DD)
-    save_plot       : salva grafico em data/processed/
+    Cada horizonte Ã© plotado como uma linha tracejada colorida.
+    O valor real do boi gordo Ã© plotado em preto como referÃªncia.
     """
-    from src.models.predict import _load_model, _load_feature_cols
-
-    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest", "baseline": "Baseline"}
     model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
+    coluna_previsao = _prediction_column(tipo_modelo)
 
-    # Seleciona a partir da data de inicio
     df_plot = dataframe_dados.loc[data_inicio:].copy()
-
     if df_plot.empty:
         print(f"[evaluate] Sem dados a partir de {data_inicio}. Verifique DATE_RANGE em settings.py.")
         return
@@ -198,40 +331,44 @@ def plot_previsao_vs_real(
         zorder=5,
     )
 
-    # Uma linha por horizonte
-    for horizonte_dias in HORIZONS:
-        out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
-        
-        coluna_previsao = f"previsao_{tipo_modelo}"
+    horizontes = [horizonte_dias] if horizonte_dias else _available_horizons(resultados_treinamento)
+    for h in horizontes:
+        if h not in resultados_treinamento:
+            print(f"[evaluate] Aviso: horizonte {h}d nÃ£o encontrado nos resultados.")
+            continue
+
+        out_of_fold_dataframe = resultados_treinamento[h].get("out_of_fold_dataframe")
+        if out_of_fold_dataframe is None or coluna_previsao not in out_of_fold_dataframe.columns:
+            print(f"[evaluate] Aviso: previsÃµes {coluna_previsao} ausentes para h{h}d.")
+            continue
+
         previsoes = out_of_fold_dataframe[coluna_previsao].copy()
 
         # Desloca as previsoes para o instante correto:
-        # a previsao feita em t para t+horizonte_dias deve ser plotada em t+horizonte_dias
         serie_previsoes = pd.Series(previsoes.values, index=out_of_fold_dataframe.index)
-        serie_previsoes.index = serie_previsoes.index + pd.Timedelta(days=horizonte_dias)
+        serie_previsoes.index = serie_previsoes.index + pd.Timedelta(days=h)
 
-        # Alinha com o periodo do grafico: Cortar datas OOF antigas
+        # Alinha com o periodo do grafico
         serie_previsoes = serie_previsoes[serie_previsoes.index >= pd.to_datetime(data_inicio)]
-        serie_previsoes = serie_previsoes[serie_previsoes.index <= df_plot.index[-1] + pd.Timedelta(days=horizonte_dias)]
+        serie_previsoes = serie_previsoes[serie_previsoes.index <= df_plot.index[-1] + pd.Timedelta(days=h)]
 
         ax.plot(
             serie_previsoes.index,
             serie_previsoes.values,
-            color=HORIZON_COLORS[horizonte_dias],
+            color=HORIZON_COLORS.get(h, "#555555"),
             linewidth=1.4,
             linestyle="--",
             alpha=0.85,
-            label=f"Previsão {HORIZON_LABELS[horizonte_dias]}",
+            label=f"PrevisÃ£o {HORIZON_LABELS.get(h, f'{h} dias')}",
         )
 
-    ax.set_title(
-        f"Previsão vs. Valor Real — {model_label}\n"
-        f"Período: {data_inicio} a {df_plot.index[-1].strftime('%d/%m/%Y')}",
-        fontsize=13,
-        fontweight="bold",
+    _maybe_title(
+        ax,
+        f"PrevisÃ£o vs. Valor Real â€” {model_label}\n"
+        f"PerÃ­odo: {data_inicio} a {df_plot.index[-1].strftime('%d/%m/%Y')}",
     )
     ax.set_xlabel("Data", fontsize=11)
-    ax.set_ylabel("Preço (R$/arroba, preço real)", fontsize=11)
+    ax.set_ylabel("PreÃ§o (R$/arroba, preÃ§o real)", fontsize=11)
     ax.legend(fontsize=12, loc="upper left")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.tick_params(axis="x", rotation=30)
@@ -241,10 +378,11 @@ def plot_previsao_vs_real(
     if save_plot:
         out_dir = DATA_PROCESSED / "previsao_vs_real"
         out_dir.mkdir(exist_ok=True)
-        plot_path = out_dir / f"previsao_vs_real_{tipo_modelo}.png"
+        suffix = f"_h{horizonte_dias}d" if horizonte_dias else ""
+        plot_path = out_dir / f"previsao_vs_real_{tipo_modelo}{suffix}.png"
         plt.savefig(plot_path, dpi=150)
         plt.close()
-        print(f"[evaluate] Gráfico salvo: {plot_path}")
+        print(f"[evaluate] GrÃ¡fico salvo: {plot_path}")
     else:
         plt.show()
 
@@ -254,44 +392,50 @@ def plot_metricas_por_horizonte(
     save_plot: bool = True,
 ) -> None:
     """
-    Grafico de barras comparando MAPE medio de XGBoost e Random Forest
-    por horizonte de previsao.
+    GrÃ¡fico de barras comparando MAPE mÃ©dio dos modelos por horizonte de previsÃ£o.
     """
     dataframe_medias = metrics_mean(resultados_treinamento)
 
-    horizontes  = sorted(dataframe_medias["horizonte_dias"].unique())
-    x           = np.arange(len(horizontes))
-    largura     = 0.35
+    horizontes = sorted(dataframe_medias["horizonte_dias"].unique())
+    modelos_disponiveis = [m for m in ["XGBoost", "RandomForest", "Baseline"] if m in dataframe_medias["modelo"].unique()]
+    x = np.arange(len(horizontes))
+    largura = min(0.8 / max(len(modelos_disponiveis), 1), 0.25)
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    mapes_xgboost = [
-        dataframe_medias[(dataframe_medias["horizonte_dias"] == horizonte_dias) & (dataframe_medias["modelo"] == "XGBoost")]["MAPE"].values[0]
-        for horizonte_dias in horizontes
-    ]
-    mapes_random_forest = [
-        dataframe_medias[(dataframe_medias["horizonte_dias"] == horizonte_dias) & (dataframe_medias["modelo"] == "RandomForest")]["MAPE"].values[0]
-        for horizonte_dias in horizontes
-    ]
+    bar_colors = {"XGBoost": "#2b9957", "RandomForest": "#e06f00", "Baseline": "#7a7a7a"}
 
-    bars_xgb = ax.bar(x - largura/2, mapes_xgboost, largura, label="XGBoost",      color="#2b9957", alpha=0.9)
-    bars_rf  = ax.bar(x + largura/2, mapes_random_forest,  largura, label="Random Forest", color="#e06f00", alpha=0.9)
+    for idx, modelo in enumerate(modelos_disponiveis):
+        offset = (idx - (len(modelos_disponiveis) - 1) / 2) * largura * 1.2
+        mapes_modelo = []
+        for horizonte_dias in horizontes:
+            sub = dataframe_medias[
+                (dataframe_medias["horizonte_dias"] == horizonte_dias)
+                & (dataframe_medias["modelo"] == modelo)
+            ]
+            mapes_modelo.append(sub["MAPE"].values[0] if not sub.empty else np.nan)
 
-    # Rotulos de valor nas barras
-    for bar in bars_xgb:
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.15,
-            f"{bar.get_height():.2f}%",
-            ha="center", va="bottom", fontsize=9, fontweight="bold",
+        bars = ax.bar(
+            x + offset,
+            mapes_modelo,
+            largura,
+            label=modelo,
+            color=bar_colors.get(modelo, "#888"),
+            alpha=0.9,
         )
-    for bar in bars_rf:
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.15,
-            f"{bar.get_height():.2f}%",
-            ha="center", va="bottom", fontsize=9, fontweight="bold",
-        )
+
+        for bar in bars:
+            if np.isnan(bar.get_height()):
+                continue
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.15,
+                f"{bar.get_height():.2f}%",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
 
     ax.set_title(
         "MAPE Médio por Horizonte de Previsão\nValidação Walk-Forward (5 folds)",
@@ -303,7 +447,8 @@ def plot_metricas_por_horizonte(
     ax.set_xticklabels([f"{h} dias" for h in horizontes], fontsize=11)
     ax.legend(fontsize=12)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
-    ax.set_ylim(0, max(max(mapes_xgboost), max(mapes_random_forest)) * 1.2)
+    ymax = dataframe_medias["MAPE"].max() if not dataframe_medias.empty else 1
+    ax.set_ylim(0, ymax * 1.2)
 
     plt.tight_layout()
 
@@ -452,16 +597,26 @@ def plot_analise_residuos(
     O painel inclui:
     1. Gráfico de dispersão Valor Real vs. Previsão
     2. Distribuição (Histograma) dos resíduos com curva normal
-    3. Comportamento dos resíduos ao longo do tempo
+    3. QQ-Plot dos resíduos
+    4. Comportamento dos resíduos ao longo do tempo
     Gera as visualizações de análise de comportamento residual do modelo.
     """
     import scipy.stats as stats
 
-    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest", "baseline": "Baseline"}
     model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
+    coluna_previsao = _prediction_column(tipo_modelo)
+
+    if horizonte_dias not in resultados_treinamento:
+        print(f"[evaluate] Horizonte {horizonte_dias}d ausente para análise de resíduos.")
+        return
+
+    out_of_fold_dataframe = resultados_treinamento[horizonte_dias].get("out_of_fold_dataframe")
+    if out_of_fold_dataframe is None or coluna_previsao not in out_of_fold_dataframe.columns:
+        print(f"[evaluate] Previsão {coluna_previsao} indisponível para h{horizonte_dias}d.")
+        return
 
     # Carrega base OOF e seleciona a partir da data de inicio
-    out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
     try:
         df_valid = out_of_fold_dataframe.loc[data_inicio:].copy()
     except KeyError:
@@ -472,7 +627,7 @@ def plot_analise_residuos(
         return
 
     y_true = df_valid["y_true"].values
-    y_pred = df_valid[f"previsao_{tipo_modelo}"].values
+    y_pred = df_valid[coluna_previsao].values
 
     residuos = y_true - y_pred
 
@@ -531,7 +686,22 @@ def plot_analise_residuos(
         plt.show()
 
     # ==========================================
-    # 3. Resíduos ao longo do tempo
+    # 3. QQ-Plot dos resíduos
+    # ==========================================
+    fig_qq, ax_qq = plt.subplots(figsize=(6, 6))
+    stats.probplot(residuos, dist="norm", plot=ax_qq)
+    ax_qq.set_title(f"QQ-Plot dos Resíduos ({model_label})\nHorizonte: {horizonte_dias} dias", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+
+    if save_plot:
+        qq_path = out_dir / f"qqplot_residuos_{tipo_modelo}_h{horizonte_dias}d.png"
+        plt.savefig(qq_path, dpi=150)
+        plt.close(fig_qq)
+    else:
+        plt.show()
+
+    # ==========================================
+    # 4. Resíduos ao longo do tempo
     # ==========================================
     fig_time, ax_time = plt.subplots(figsize=(10, 5))
     ax_time.plot(df_valid.index, residuos, color="#2b9957", lw=1.5, alpha=0.85)
@@ -548,7 +718,7 @@ def plot_analise_residuos(
         time_path = out_dir / f"historico_residuos_{tipo_modelo}_h{horizonte_dias}d.png"
         plt.savefig(time_path, dpi=150)
         plt.close(fig_time)
-        print(f"[evaluate] 3 Gráficos de resíduos isolados salvos na pasta: {out_dir.name}/")
+        print(f"[evaluate] 4 Gráficos de resíduos isolados salvos na pasta: {out_dir.name}/")
     else:
         plt.show()
 
@@ -565,10 +735,19 @@ def plot_erro_mensal(
     historicamente de acordo com os Mêses do Ano. 
     Ideal para identificar a perda de previsibilidade na entressafra e fatores macro.
     """
-    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest"}
+    MODEL_NAMES = {"xgboost": "XGBoost", "random_forest": "Random Forest", "baseline": "Baseline"}
     model_label = MODEL_NAMES.get(tipo_modelo, tipo_modelo.upper())
+    coluna_previsao = _prediction_column(tipo_modelo)
 
-    out_of_fold_dataframe = resultados_treinamento[horizonte_dias]["out_of_fold_dataframe"]
+    if horizonte_dias not in resultados_treinamento:
+        print(f"[evaluate] Horizonte {horizonte_dias}d ausente para sazonalidade de erro.")
+        return
+
+    out_of_fold_dataframe = resultados_treinamento[horizonte_dias].get("out_of_fold_dataframe")
+    if out_of_fold_dataframe is None or coluna_previsao not in out_of_fold_dataframe.columns:
+        print(f"[evaluate] Previsão {coluna_previsao} indisponível para h{horizonte_dias}d.")
+        return
+
     try:
         df_valid = out_of_fold_dataframe.loc[data_inicio:].copy()
     except KeyError:

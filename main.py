@@ -31,7 +31,18 @@ from src.processing.merger    import build_dataset
 from src.processing.cleaner   import clean
 from src.features.engineering import build_features
 from src.models.train         import train_all
-from src.models.evaluate      import metrics_mean, feature_importance, print_report, plot_previsao_vs_real, plot_metricas_por_horizonte, plot_walk_forward_folds, plot_analise_residuos, plot_erro_mensal
+from src.models.evaluate      import (
+    metrics_mean,
+    feature_importance,
+    print_report,
+    plot_previsao_vs_real,
+    plot_metricas_por_horizonte,
+    plot_walk_forward_folds,
+    plot_analise_residuos,
+    plot_erro_mensal,
+    add_baseline_to_results,
+    export_metricas_csv,
+)
 from src.models.predict       import predict_latest
 
 
@@ -61,6 +72,8 @@ def step_collect_and_process(use_cache: bool = False) -> pd.DataFrame:
     print("[main] Construindo features...")
     df_features = build_features(df_clean)
 
+    # Remove attrs (ex.: holdout metadata com Timestamp) para evitar falha de serialização no parquet
+    df_features.attrs.clear()
     df_features.to_parquet(DATASET_CACHE)
     print(f"[main] Dataset salvo em cache: {DATASET_CACHE}")
 
@@ -81,22 +94,33 @@ def step_train(df: pd.DataFrame) -> dict:
 
 def step_evaluate(resultados_treinamento: dict, dataframe_features: pd.DataFrame = None) -> None:
     """Etapa 3: relatório de métricas e importância de features."""
+    resultados_treinamento = add_baseline_to_results(resultados_treinamento, dataframe_features)
+    horizontes_avaliados = sorted(resultados_treinamento.keys())
+
     print_report(resultados_treinamento)
+    export_metricas_csv(resultados_treinamento)
 
     print("\n[main] Gerando gráficos de feature importance...")
-    for horizonte_dias in HORIZONS:
+    for horizonte_dias in horizontes_avaliados:
         for tipo_modelo in ["xgboost", "random_forest"]:
             try:
                 feature_importance(horizonte_dias, tipo_modelo=tipo_modelo, save_plot=True)
             except FileNotFoundError as e:
                 print(f"  [aviso] {e}")
 
-    print("\n[main] Gerando gráficos de previsão vs. real...")
-    for tipo_modelo in ["xgboost", "random_forest"]:
-        try:
-            plot_previsao_vs_real(dataframe_features, resultados_treinamento, tipo_modelo=tipo_modelo, data_inicio="2025-11-01")
-        except Exception as e:
-            print(f"  [aviso] {e}")
+    print("\n[main] Gerando gráficos de previsão vs. real por horizonte e modelo...")
+    for tipo_modelo in ["xgboost", "random_forest", "baseline"]:
+        for horizonte_dias in horizontes_avaliados:
+            try:
+                plot_previsao_vs_real(
+                    dataframe_features,
+                    resultados_treinamento,
+                    tipo_modelo=tipo_modelo,
+                    horizonte_dias=horizonte_dias,
+                    data_inicio="2025-11-01",
+                )
+            except Exception as e:
+                print(f"  [aviso] {e}")
 
     print("\n[main] Gerando gráfico de comparação de MAPE...")
     plot_metricas_por_horizonte(resultados_treinamento)
@@ -108,8 +132,8 @@ def step_evaluate(resultados_treinamento: dict, dataframe_features: pd.DataFrame
         print(f"  [aviso] {e}")
 
     print("\n[main] Gerando gráficos de análise de resíduos...")
-    for horizonte_dias in HORIZONS:
-        for tipo_modelo in ["xgboost", "random_forest"]:
+    for horizonte_dias in horizontes_avaliados:
+        for tipo_modelo in ["xgboost", "random_forest", "baseline"]:
             try:
                 # Usa dados a partir de 2020 para maior volume estatístico no scatter
                 plot_analise_residuos(resultados_treinamento, horizonte_dias=horizonte_dias, tipo_modelo=tipo_modelo, data_inicio="2020-01-01")
@@ -117,8 +141,8 @@ def step_evaluate(resultados_treinamento: dict, dataframe_features: pd.DataFrame
                 print(f"  [aviso] Falha na análise de resíduos (h={horizonte_dias}, {tipo_modelo}): {e}")
 
     print("\n[main] Gerando gráficos mensais de sazonalidade de erro (MAE/MAPE)...")
-    for horizonte_dias in HORIZONS:
-        for tipo_modelo in ["xgboost", "random_forest"]:
+    for horizonte_dias in horizontes_avaliados:
+        for tipo_modelo in ["xgboost", "random_forest", "baseline"]:
             try:
                 plot_erro_mensal(resultados_treinamento, horizonte_dias=horizonte_dias, tipo_modelo=tipo_modelo, data_inicio="2022-01-01")
             except Exception as e:
