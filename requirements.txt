@@ -1,46 +1,46 @@
-# requirements.txt
+﻿# requirements.txt
 # ==============================================================
-# Dependências do projeto — previsão de preço do Boi Gordo
+# DependÃªncias do projeto â€” previsÃ£o de preÃ§o do Boi Gordo
 # Testado com Python 3.11+
 #
-# Instalação:
+# InstalaÃ§Ã£o:
 #   pip install -r requirements.txt
 #
-# Para Copernicus ERA5, configure também o ~/.cdsapirc:
+# Para Copernicus ERA5, configure tambÃ©m o ~/.cdsapirc:
 #   url: https://cds.climate.copernicus.eu/api/v2
 #   key: <uid>:<api-key>
 # ==============================================================
 
-# ── Manipulação de dados ───────────────────────────────────────
+# â”€â”€ ManipulaÃ§Ã£o de dados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 pandas>=2.1.0
 numpy>=1.26.0
 pyarrow>=14.0.0          # backend parquet para pd.read/to_parquet
 
-# ── Leitura de planilhas (CEPEA) ───────────────────────────────
+# â”€â”€ Leitura de planilhas (CEPEA) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 openpyxl>=3.1.0          # leitura de .xlsx
 xlrd>=2.0.1              # leitura de .xls (formato legado)
 
-# ── Requisições HTTP (SIDRA, ComexStat, BCB) ───────────────────
+# â”€â”€ RequisiÃ§Ãµes HTTP (SIDRA, ComexStat, BCB) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 requests>=2.31.0
 
-# ── Copernicus ERA5 ────────────────────────────────────────────
+# â”€â”€ Copernicus ERA5 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cdsapi>=0.6.1            # cliente oficial Copernicus CDS
 xarray>=2023.12.0        # leitura de arquivos NetCDF
 netCDF4>=1.6.5           # backend NetCDF para xarray
 cfgrib>=0.9.10           # backend GRIB para xarray (ERA5 novo endpoint)
 eccodes>=1.7.0           # dependencia do cfgrib
-scipy>=1.11.0            # interpolação usada pelo xarray
+scipy>=1.11.0            # interpolaÃ§Ã£o usada pelo xarray
 
-# ── Modelos de machine learning ────────────────────────────────
-scikit-learn>=1.4.0      # RandomForestRegressor, métricas
+# â”€â”€ Modelos de machine learning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+scikit-learn>=1.4.0      # RandomForestRegressor, mÃ©tricas
 xgboost>=2.0.0           # XGBRegressor
 
-# ── Serialização de modelos ────────────────────────────────────
+# â”€â”€ SerializaÃ§Ã£o de modelos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 joblib>=1.3.0            # salvar/carregar modelos treinados
 
-# ── Visualização ───────────────────────────────────────────────
-matplotlib>=3.8.0        # gráficos de feature importance
+# â”€â”€ VisualizaÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+>=1.43.0        # interface web simples para simulacao
 
-# ── Utilitários de desenvolvimento ────────────────────────────
-jupyter>=1.0.0           # notebooks exploratórios
+# â”€â”€ UtilitÃ¡rios de desenvolvimento â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+jupyter>=1.0.0           # notebooks exploratÃ³rios
 ipykernel>=6.27.0        # kernel Jupyter
