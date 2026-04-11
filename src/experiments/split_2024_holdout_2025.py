@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 
 from config.settings import HORIZONS, ROOT_DIR
 from src.features.engineering import build_features
-from src.processing.cleaner import clean
-from src.processing.merger import build_dataset
 
 
 EXPERIMENT_SLUG = "train_split_2024_holdout_2025"
@@ -135,6 +133,9 @@ def configured_training_runtime(paths: ExperimentPaths):
 
 
 def _build_feature_datasets() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    from src.processing.cleaner import clean
+    from src.processing.merger import build_dataset
+
     raw_df = build_dataset()
     clean_full_df = clean(raw_df, train_cutoff=TRAIN_END, exclude_holdout=False)
     train_base_df = clean_full_df.loc[:TRAIN_END].copy()
