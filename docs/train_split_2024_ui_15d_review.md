@@ -78,6 +78,72 @@ Quando a implementação for integrada, a documentação final deve registrar:
 5. evidência de funcionamento da curva 1..15 dias
 6. evidência de que o pipeline legado continuou funcional
 
+## Comandos de auditoria recomendados
+
+Os comandos abaixo já são compatíveis com o estado atual do repositório e servem como checklist objetivo de revisão quando a implementação chegar.
+
+### 1. Confirmar pontos de corte e holdout
+
+```powershell
+Get-ChildItem -Recurse -File src,config,main.py |
+  Select-String -Pattern '2024-12-31|2025-01-01|2025-12-31|holdout|cutoff'
+```
+
+Objetivo:
+
+- garantir que o novo fluxo use `2024-12-31` como limite de treino
+- garantir que `2025` apareça apenas como validação/holdout no novo fluxo
+- preservar o fluxo legado quando a separação for intencional
+
+### 2. Confirmar artefatos isolados
+
+```powershell
+Get-ChildItem -Recurse -Directory data,models_saved |
+  Select-Object FullName
+```
+
+Objetivo:
+
+- verificar criação de namespace próprio para o fluxo 2024/2025
+- evitar sobrescrita silenciosa do pipeline legado
+
+### 3. Confirmar entrypoints disponíveis
+
+```powershell
+python main.py
+```
+
+Objetivo:
+
+- checar ajuda/uso do pipeline CLI atual
+- confirmar que o fluxo novo foi adicionado sem quebrar os modos existentes
+
+### 4. Confirmar dependências/documentação da UI
+
+```powershell
+Get-Content requirements.txt
+Get-ChildItem -Recurse -File | Select-String -Pattern 'streamlit|gradio|flask|fastapi'
+```
+
+Objetivo:
+
+- identificar a stack web escolhida
+- confirmar que a documentação final explica exatamente como subir a interface
+
+## Observações de baseline sobre tooling
+
+Durante a auditoria inicial desta branch:
+
+- não foi encontrado `pytest.ini`, `pyproject.toml` ou configuração dedicada de lint/typecheck
+- a pasta `Tests/` existe, mas hoje contém scripts utilitários/debug, não uma suíte automatizada formal
+- o entrypoint principal documentado do projeto continua sendo `python main.py`
+
+Implicação para a revisão final:
+
+- se a implementação adicionar testes automatizados, o comando exato precisa ser documentado
+- se a implementação adicionar lint/typecheck, os comandos e o escopo devem entrar na evidência final
+- se não houver lint/typecheck formais, isso deve ser declarado explicitamente na entrega em vez de omitido
+
 ## Riscos já identificados
 
 - uso de constantes hardcoded com `2025-12-31` em múltiplos módulos
