@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import joblib
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -15,7 +14,6 @@ import matplotlib.pyplot as plt
 
 from config.settings import HORIZONS, ROOT_DIR
 from src.features.engineering import build_features
-from src.models.train import _compute_metrics
 from src.processing.cleaner import clean
 from src.processing.merger import build_dataset
 
@@ -54,6 +52,23 @@ MODEL_OUTPUT_COLUMNS = {
     "random_forest": "previsao_random_forest",
     "media_modelos": "media_modelos",
 }
+
+
+def _joblib():
+    import joblib
+
+    return joblib
+
+
+def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
+    y_t = y_true[mask]
+    y_p = y_pred[mask]
+
+    rmse = float(np.sqrt(np.mean((y_t - y_p) ** 2)))
+    mae = float(np.mean(np.abs(y_t - y_p)))
+    mape = float(np.mean(np.abs((y_t - y_p) / np.where(y_t == 0, np.nan, y_t))) * 100)
+    return {"RMSE": rmse, "MAE": mae, "MAPE": mape}
 
 
 @dataclass(frozen=True)
@@ -142,15 +157,15 @@ def load_or_build_feature_datasets(
         and paths.cache_clean_path.exists()
     ):
         return (
-            joblib.load(paths.cache_train_path),
-            joblib.load(paths.cache_full_path),
-            joblib.load(paths.cache_clean_path),
+            _joblib().load(paths.cache_train_path),
+            _joblib().load(paths.cache_full_path),
+            _joblib().load(paths.cache_clean_path),
         )
 
     train_features_df, full_features_df, clean_full_df = _build_feature_datasets()
-    joblib.dump(train_features_df, paths.cache_train_path)
-    joblib.dump(full_features_df, paths.cache_full_path)
-    joblib.dump(clean_full_df, paths.cache_clean_path)
+    _joblib().dump(train_features_df, paths.cache_train_path)
+    _joblib().dump(full_features_df, paths.cache_full_path)
+    _joblib().dump(clean_full_df, paths.cache_clean_path)
 
     save_ui_reference_artifacts(clean_full_df, paths=paths)
     return train_features_df, full_features_df, clean_full_df
@@ -178,16 +193,16 @@ def train_experiment(
     paths = paths or get_experiment_paths()
     with configured_training_runtime(paths) as train_module:
         results = train_module.train_all(train_features_df)
-    joblib.dump(results, paths.train_results_path)
+    _joblib().dump(results, paths.train_results_path)
     return results
 
 
 def _load_model(paths: ExperimentPaths, model_type: str, horizon: int):
-    return joblib.load(paths.models_dir / f"{model_type}_h{horizon}d.joblib")
+    return _joblib().load(paths.models_dir / f"{model_type}_h{horizon}d.joblib")
 
 
 def _load_feature_columns(paths: ExperimentPaths, horizon: int) -> list[str]:
-    return joblib.load(paths.models_dir / f"feature_cols_h{horizon}d.joblib")
+    return _joblib().load(paths.models_dir / f"feature_cols_h{horizon}d.joblib")
 
 
 def evaluate_holdout(
