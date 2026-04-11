@@ -63,11 +63,14 @@ class FutureImplementationContractTests(unittest.TestCase):
     def test_ui_entrypoint_contract_is_ready_for_implementation(self) -> None:
         candidate_files = [
             path for path in REPO_ROOT.rglob("*.py")
-            if path.parts[0] not in {".omx", ".git", "__pycache__"}
+            if path.parts[0] not in {".omx", ".git", "__pycache__", "Tests"}
         ]
         streamlit_files = [
             path for path in candidate_files
-            if "streamlit" in path.read_text(encoding="utf-8", errors="ignore").lower()
+            if re.search(
+                r"(^|\\n)\\s*(import\\s+streamlit|from\\s+streamlit\\s+import)\\b",
+                path.read_text(encoding="utf-8", errors="ignore").lower(),
+            )
         ]
         if not streamlit_files:
             self.skipTest("UI entrypoint not implemented in this branch yet.")
@@ -85,7 +88,7 @@ class FutureImplementationContractTests(unittest.TestCase):
     def test_daily_curve_rule_contract_is_ready_for_implementation(self) -> None:
         candidate_files = [
             path for path in REPO_ROOT.rglob("*.py")
-            if path.parts[0] not in {".omx", ".git", "__pycache__"}
+            if path.parts[0] not in {".omx", ".git", "__pycache__", "Tests"}
         ]
         combined_source = "\n".join(
             path.read_text(encoding="utf-8", errors="ignore").lower()
