@@ -15,7 +15,7 @@ def _candidate_python_files() -> list[Path]:
     return [
         path
         for path in REPO_ROOT.rglob("*.py")
-        if path.parts[0] not in {".omx", ".git", "__pycache__", "Tests"}
+        if not {".omx", ".git", "__pycache__", "Tests"}.intersection(path.parts)
     ]
 
 
