@@ -18,7 +18,7 @@
 
 import pandas as pd
 from pathlib import Path
-from config.settings import STATE, DATE_RANGE
+from config.settings import CEPEA_FILES, DATE_RANGE
 
 
 PRODUCT_MAP = {
@@ -26,7 +26,6 @@ PRODUCT_MAP = {
     "bezerro":   "preco_bezerro",
     "milho":     "preco_milho",
 }
-
 
 def _resolve_path(filepath: Path) -> Path:
     """
@@ -103,11 +102,11 @@ def _read_cepea_sheet(filepath: str | Path, column_name: str) -> pd.Series:
 def _reindex_to_daily(series: pd.Series, start: str, end: str) -> pd.Series:
     """
     Expande a serie para todos os dias corridos do periodo e
-    interpola linearmente os dias sem cotacao (fins de semana/feriados).
+    propaga apenas a ultima cotacao conhecida para dias sem cotacao.
     """
     full_index = pd.date_range(start=start, end=end, freq="D")
     series = series.reindex(full_index)
-    series = series.interpolate(method="linear")
+    series = series.ffill()
     return series
 
 
@@ -125,12 +124,10 @@ def load_cepea(
     Retorna DataFrame diario com colunas:
         preco_boi_gordo, preco_bezerro, preco_milho
     """
-    base = Path(STATE["cepea_file"]).parent
-
     paths = {
-        "boi_gordo": boi_file     or base / "cepea_boi_gordo.xlsx",
-        "bezerro":   bezerro_file or base / "cepea_bezerro.xlsx",
-        "milho":     milho_file   or base / "cepea_milho.xlsx",
+        "boi_gordo": boi_file     or CEPEA_FILES["boi_gordo"],
+        "bezerro":   bezerro_file or CEPEA_FILES["bezerro"],
+        "milho":     milho_file   or CEPEA_FILES["milho"],
     }
 
     start = DATE_RANGE["start"]
@@ -146,6 +143,21 @@ def load_cepea(
     df = pd.concat(series_list, axis=1)
     df.index.name = "data"
 
+    return df
+
+
+def load_cepea_price_history_raw() -> pd.DataFrame:
+    """
+    Carrega historico bruto do CEPEA sem recorte por DATE_RANGE
+    e sem expansao/interpolacao diaria.
+    """
+    series_list = []
+    for product, column_name in PRODUCT_MAP.items():
+        series = _read_cepea_sheet(CEPEA_FILES[product], column_name)
+        series_list.append(series)
+
+    df = pd.concat(series_list, axis=1).sort_index()
+    df.index.name = "data"
     return df
 
 
@@ -183,8 +195,8 @@ def save_cepea_xlsx(output_path: str | None = None) -> None:
         "preco_bezerro":   "Preco Bezerro (R$/cabeca)",
         "preco_milho":     "Preco Milho (R$/saca 60kg)",
     }
-    if "ipca_index" in df_export.columns:
-        col_mapping["ipca_index"] = "Indice IPCA"
+    if "inflation_index" in df_export.columns:
+        col_mapping["inflation_index"] = "Indice de inflacao"
         
     df_export = df_export.rename(columns=col_mapping)
 

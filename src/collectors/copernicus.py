@@ -12,6 +12,7 @@
 #        key: <sua-api-key>
 # ==============================================================
 
+import json
 import cdsapi
 import xarray as xr
 import pandas as pd
@@ -44,21 +45,64 @@ def _build_year_month_lists(start: str, end: str) -> tuple[list, list]:
     return years, months
 
 
+def _metadata_path(output_path: Path) -> Path:
+    return output_path.with_suffix(output_path.suffix + ".meta.json")
+
+
+def _request_scope() -> dict:
+    bbox = STATE["copernicus_bbox"]
+    area = [bbox[3], bbox[0], bbox[1], bbox[2]]
+    years, months = _build_year_month_lists(DATE_RANGE["start"], DATE_RANGE["end"])
+    return {
+        "start": DATE_RANGE["start"],
+        "end": DATE_RANGE["end"],
+        "dataset": CDS_DATASET,
+        "variable": CDS_VARIABLE,
+        "bbox": bbox,
+        "area": area,
+        "years": years,
+        "months": months,
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+    }
+
+
+def _read_cache_metadata(output_path: Path) -> dict | None:
+    metadata_path = _metadata_path(output_path)
+    if not metadata_path.exists():
+        return None
+    try:
+        return json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _cache_matches_config(output_path: Path, expected_scope: dict) -> bool:
+    if not output_path.exists():
+        return False
+    return _read_cache_metadata(output_path) == expected_scope
+
+
+def _write_cache_metadata(output_path: Path, metadata: dict) -> None:
+    _metadata_path(output_path).write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def download_era5(force: bool = False) -> Path:
     """
     Baixa o arquivo ERA5-Land para a bounding box do estado configurado.
     O download e feito apenas uma vez (arquivo em cache em data/raw/).
     """
     output_path = Path(STATE["era5_file"])
+    expected_scope = _request_scope()
 
-    if output_path.exists() and not force:
+    if not force and _cache_matches_config(output_path, expected_scope):
         print(f"[copernicus] ERA5 ja baixado: {output_path}")
         return output_path
-
-    bbox = STATE["copernicus_bbox"]  # [lon_min, lat_min, lon_max, lat_max]
-    area = [bbox[3], bbox[0], bbox[1], bbox[2]]  # [N, W, S, E]
-
-    years, months = _build_year_month_lists(DATE_RANGE["start"], DATE_RANGE["end"])
+    if output_path.exists() and not force:
+        print("[copernicus] Cache ERA5 incompatível com config atual; baixando novamente.")
 
     client = cdsapi.Client()
     client.retrieve(
@@ -66,15 +110,16 @@ def download_era5(force: bool = False) -> Path:
         {
             "variable":     CDS_VARIABLE,
             "product_type": "monthly_averaged_reanalysis",
-            "year":         years,
-            "month":        months,
+            "year":         expected_scope["years"],
+            "month":        expected_scope["months"],
             "time":         "00:00",
-            "area":         area,
+            "area":         expected_scope["area"],
             "data_format":  "netcdf",     # solicita NetCDF explicitamente
             "download_format": "unarchived",
         },
         str(output_path),
     )
+    _write_cache_metadata(output_path, expected_scope)
 
     print(f"[copernicus] ERA5 salvo em: {output_path}")
     return output_path
@@ -153,6 +198,11 @@ def load_copernicus(force_download: bool = False) -> pd.DataFrame:
     end   = DATE_RANGE["end"]
 
     series = series.loc[start:end]
+    if series.empty:
+        raise ValueError(
+            "Arquivo ERA5 não cobre DATE_RANGE configurado. "
+            "Reexecute com force_download=True para atualizar o cache."
+        )
     series = _expand_to_daily(series, start, end)
 
     print(f"[copernicus] {len(series)} registros diarios carregados.")

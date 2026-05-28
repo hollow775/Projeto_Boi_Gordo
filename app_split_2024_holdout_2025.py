@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
+from src.collectors.cepea import load_cepea_price_history_raw
 from src.experiments.split_2024_holdout_2025 import (
     HOLDOUT_END,
     SERIES_LABELS,
@@ -17,13 +18,21 @@ from src.experiments.split_2024_holdout_2025 import (
 
 GREEN = "#2B9957"
 ORANGE = "#E06F00"
+HISTORY_WINDOWS = {
+    "Última semana": pd.DateOffset(weeks=1),
+    "Último mês": pd.DateOffset(months=1),
+    "Últimos 6 meses": pd.DateOffset(months=6),
+    "Último ano": pd.DateOffset(years=1),
+    "Últimos 5 anos": pd.DateOffset(years=5),
+    "Desde 2010": pd.Timestamp("2010-01-01"),
+}
 
 
 def _format_example_table(example_df: pd.DataFrame) -> pd.DataFrame:
     if example_df.empty:
         return example_df
     renamed = example_df.rename(columns=SERIES_LABELS).copy()
-    return renamed.T.rename(columns={renamed.index[0]: "Exemplo (ultimo dia de treino)"})
+    return renamed.T.rename(columns={renamed.index[0]: "Exemplo (último dia de treino)"})
 
 
 def _read_example_values(processed_dir):
@@ -33,10 +42,34 @@ def _read_example_values(processed_dir):
     return pd.read_csv(example_path, index_col="data", parse_dates=True)
 
 
-def _render_history_chart(clean_full_df: pd.DataFrame) -> None:
-    history_df = clean_full_df.loc[:, ["preco_boi_gordo"]].tail(120).copy()
+def _load_boi_history_raw_cepea() -> pd.DataFrame:
+    raw_cepea_df = load_cepea_price_history_raw()
+    return raw_cepea_df.loc[:, ["preco_boi_gordo"]].dropna().copy()
+
+
+def _render_history_chart(boi_history_df: pd.DataFrame) -> None:
+    selected_window = st.radio(
+        "Período histórico",
+        options=list(HISTORY_WINDOWS.keys()),
+        horizontal=True,
+    )
+    end_date = boi_history_df.index.max()
+    selected_window_value = HISTORY_WINDOWS[selected_window]
+    if isinstance(selected_window_value, pd.DateOffset):
+        start_date = end_date - selected_window_value
+    else:
+        start_date = max(pd.Timestamp(selected_window_value), boi_history_df.index.min())
+    history_df = boi_history_df.loc[boi_history_df.index >= start_date].copy()
+    if history_df.empty:
+        st.warning("Sem dados para o período selecionado.")
+        return
+
+    y_min = float(history_df["preco_boi_gordo"].min())
+    y_max = float(history_df["preco_boi_gordo"].max())
+    y_top = y_max if y_max > y_min else y_min + 1.0
+
     chart_df = history_df.reset_index().rename(columns={"index": "data"})
-    st.subheader("Historico real recente do boi gordo")
+    st.subheader("Histórico real do boi gordo")
     hover = alt.selection_point(
         nearest=True,
         on="mouseover",
@@ -48,7 +81,11 @@ def _render_history_chart(clean_full_df: pd.DataFrame) -> None:
         alt.Chart(chart_df)
         .encode(
             x=alt.X("data:T", title="Data"),
-            y=alt.Y("preco_boi_gordo:Q", title="R$/arroba"),
+            y=alt.Y(
+                "preco_boi_gordo:Q",
+                title="R$/arroba",
+                scale=alt.Scale(domain=[y_min, y_top]),
+            ),
         )
     )
     line = base.mark_line(color=ORANGE, strokeWidth=3)
@@ -68,6 +105,12 @@ def _render_history_chart(clean_full_df: pd.DataFrame) -> None:
         .add_params(hover)
     )
     st.altair_chart((line + points).properties(height=330), use_container_width=True)
+    valor_final = float(history_df["preco_boi_gordo"].iloc[-1])
+    variacao = valor_final - y_min
+    st.caption(
+        f"Valor inicial (mínimo da série exibida): R$ {y_min:.2f} | "
+        f"Valor final: R$ {valor_final:.2f} | Alta no período: R$ {variacao:.2f}"
+    )
 
 
 def _manual_input_form(clean_full_df: pd.DataFrame):
@@ -78,7 +121,7 @@ def _manual_input_form(clean_full_df: pd.DataFrame):
         top_left, top_right = st.columns(2)
         with top_left:
             forecast_base_date = st.date_input(
-                "Data-base do cenario",
+                "Data-base do cenário",
                 value=last_history_date,
                 min_value=TRAIN_END.date(),
                 max_value=(HOLDOUT_END + pd.Timedelta(days=365)).date(),
@@ -87,20 +130,20 @@ def _manual_input_form(clean_full_df: pd.DataFrame):
             model_type = st.selectbox(
                 "Curva exibida",
                 options=[
-                    ("media_modelos", "Media dos modelos"),
+                    ("media_modelos", "Média dos modelos"),
                     ("xgboost", "XGBoost"),
                     ("random_forest", "Random Forest"),
                 ],
                 format_func=lambda option: option[1],
             )[0]
 
-        st.markdown("##### Variaveis do cenario")
+        st.markdown("##### Variáveis do cenário")
         values: dict[str, str] = {}
         input_cols = st.columns(2, gap="small")
         for idx, column in enumerate(example_columns):
             with input_cols[idx % 2]:
                 values[column] = st.text_input(SERIES_LABELS[column], value="")
-        submitted = st.form_submit_button("Gerar previsao 1..15 dias")
+        submitted = st.form_submit_button("Gerar previsão 1..15 dias")
     return submitted, forecast_base_date, model_type, values
 
 
@@ -160,14 +203,14 @@ def _render_forecast(curve_df: pd.DataFrame, anchors_df: pd.DataFrame) -> None:
         hide_index=True,
     )
 
-    st.subheader("Ancoras dos modelos usados na curva")
+    st.subheader("Âncoras dos modelos usados na curva")
     st.dataframe(
         anchors_df.round(2).rename(
             columns={
                 "horizonte_modelo": "Horizonte do modelo",
                 "previsao_xgboost": "XGBoost",
                 "previsao_random_forest": "Random Forest",
-                "media_modelos": "Media",
+                "media_modelos": "Média",
             }
         ),
         use_container_width=True,
@@ -204,9 +247,9 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.title("Previsao do boi gordo - treino ate 2024 e holdout 2025")
+    st.title("Previsão do boi gordo - treino até 2024 e holdout 2025")
     st.caption(
-        "Interface simples para explorar cenarios manuais com modelos treinados ate 2024-12-31."
+        "Interface simples para explorar cenários manuais com modelos treinados até 2024-12-31."
     )
 
     paths = get_experiment_paths()
@@ -216,22 +259,23 @@ def main() -> None:
         and paths.cache_clean_path.exists()
     ):
         st.error(
-            "Artefatos do fluxo 2024/2025 ainda nao foram gerados. "
+            "Artefatos do fluxo 2024/2025 ainda não foram gerados. "
             "Execute `python main_split_2024_holdout_2025.py --full` primeiro."
         )
         return
 
     _, _, clean_full_df = load_or_build_feature_datasets(use_cache=True, paths=paths)
+    boi_history_df = _load_boi_history_raw_cepea()
     example_df = _read_example_values(paths.processed_dir)
 
     left, right = st.columns([1.3, 1.1], gap="large")
     with left:
         with st.container(border=True):
-            _render_history_chart(clean_full_df)
+            _render_history_chart(boi_history_df)
     with right:
         with st.container(border=True):
-            st.subheader("Preenchimento rapido")
-            st.caption("Exemplo do ultimo dia de treino (2024-12-31) para facilitar o preenchimento manual.")
+            st.subheader("Preenchimento rápido")
+            st.caption("Exemplo do último dia de treino (2024-12-31) para facilitar o preenchimento manual.")
             st.dataframe(_format_example_table(example_df), use_container_width=True)
             submitted, forecast_base_date, model_type, values = _manual_input_form(clean_full_df)
     if not submitted:

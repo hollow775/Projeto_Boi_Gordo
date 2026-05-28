@@ -13,7 +13,7 @@ DOMAIN_BOUNDS = {
     "export_usd_fob":   (0,     1e11),
     "export_kg":        (0,     1e10),
     "precipitacao_mm":  (0,     3000),
-    "ipca_index":       (1,     500),
+    "inflation_index":  (1,     500),
 }
 
 
@@ -68,7 +68,7 @@ def _report_prices(df: pd.DataFrame) -> None:
 
 def _fill_missing(df: pd.DataFrame, max_gap: int = 7) -> pd.DataFrame:
     """
-    Preenche NaN via interpolacao linear para gaps <= max_gap dias.
+    Preenche NaN via forward-fill para gaps <= max_gap dias.
     """
     # Remove colunas duplicadas antes de processar
     df = df.loc[:, ~df.columns.duplicated(keep="first")]
@@ -78,11 +78,7 @@ def _fill_missing(df: pd.DataFrame, max_gap: int = 7) -> pd.DataFrame:
         if n_missing_before == 0:
             continue
 
-        df[col] = df[col].interpolate(
-            method="linear",
-            limit=max_gap,
-            limit_direction="forward",
-        )
+        df[col] = df[col].ffill(limit=max_gap)
 
         n_missing_after  = int(df[col].isna().sum())
         filled           = n_missing_before - n_missing_after

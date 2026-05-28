@@ -82,6 +82,19 @@ class RawDataChartsContractTests(unittest.TestCase):
             "Raw-data chart flow should expose a reproducible script/command entrypoint.",
         )
 
+    def test_raw_and_holdout_charts_use_two_year_date_ticks(self) -> None:
+        raw_source = (REPO_ROOT / "src" / "experiments" / "raw_data_charts.py").read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )
+        split_source = (REPO_ROOT / "src" / "experiments" / "split_2024_holdout_2025.py").read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )
+        for source in (raw_source, split_source):
+            self.assertIn("YearLocator(base=2)", source)
+            self.assertIn('DateFormatter("%Y")', source)
+
 
 if __name__ == "__main__":
     unittest.main()

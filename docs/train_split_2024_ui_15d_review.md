@@ -18,18 +18,18 @@ Implementar um fluxo isolado do pipeline atual com as seguintes regras obrigató
 
 Fonte funcional: `.omx/specs/deep-interview-train-split-2024-ui-15d.md`.
 
-## Evidência de baseline inspecionada
+## Estado atual da implementação
 
-Na branch atual desta worker, o fluxo novo ainda **não está implementado**. A inspeção mostrou:
+O fluxo novo está implementado como caminho separado:
 
-- `config/settings.py` mantém `DATE_RANGE["end"] = "2025-12-31"`
-- `src/models/train.py` usa `CUTOFF_DATE = pd.Timestamp("2025-12-31")`
-- `src/processing/cleaner.py` usa `HOLDOUT_CUTOFF = pd.Timestamp("2025-12-31")`
-- `src/processing/merger.py` usa `HOLDOUT_CUTOFF = pd.Timestamp("2025-12-31")`
-- `main.py` expõe apenas os modos legados `--train`, `--predict`, `--evaluate` e `--full`
-- não existe entrypoint web/documentação raiz para a interface pedida
+- `main_split_2024_holdout_2025.py` expõe `--train`, `--evaluate`, `--full` e `--no-cache`.
+- `src/experiments/split_2024_holdout_2025.py` centraliza `TRAIN_END = 2024-12-31`, `HOLDOUT_START = 2025-01-01` e `HOLDOUT_END = 2025-12-31`.
+- artefatos do recorte ficam em `data/processed/train_split_2024_holdout_2025/`.
+- modelos do recorte ficam em `models_saved/train_split_2024_holdout_2025/`.
+- `app_split_2024_holdout_2025.py` é o entrypoint Streamlit da interface.
+- o pipeline legado permanece em `main.py`.
 
-Conclusão: a feature precisa chegar preservando o pipeline legado e adicionando um caminho novo, isolado e documentado.
+TODO: manter esta revisão sincronizada quando novos comandos de verificação formal forem adicionados ao projeto.
 
 ## Checklist de revisão de código
 
@@ -66,12 +66,12 @@ Ao integrar a implementação final, revisar os pontos abaixo:
 
 ## Evidência mínima esperada na verificação final
 
-Quando a implementação for integrada, a documentação final deve registrar:
+A documentação de manutenção deve registrar:
 
 1. comando(s) usados para gerar o fluxo 2024/2025
 2. comando(s) usados para subir a UI
 3. caminhos dos artefatos gerados
-4. saída resumida de:
+4. TODO: saída resumida de verificações formais quando houver configuração dedicada:
    - lint
    - testes
    - checagem estática/typecheck aplicável ao projeto
@@ -144,17 +144,12 @@ Implicação para a revisão final:
 - se a implementação adicionar lint/typecheck, os comandos e o escopo devem entrar na evidência final
 - se não houver lint/typecheck formais, isso deve ser declarado explicitamente na entrega em vez de omitido
 
-## Riscos já identificados
+## Riscos remanescentes / TODO
 
-- uso de constantes hardcoded com `2025-12-31` em múltiplos módulos
-- chance de misturar artefatos novos com diretórios já usados pelo pipeline principal
-- ausência atual de convenção documentada para subir/operar a futura interface web
+- TODO: reduzir duplicação conceitual entre constantes de cutoff do fluxo legado e do fluxo 2024/2025.
+- TODO: manter os comandos de operação da UI (`streamlit run app_split_2024_holdout_2025.py`) visíveis em documentação de uso.
+- TODO: adicionar lint/typecheck formais se o projeto passar a exigir esse tipo de verificação.
 
 ## Próximo passo desta lane
 
-Assim que a implementação e os testes das outras lanes forem integrados, complementar este documento com:
-
-- caminhos reais dos arquivos alterados
-- instruções exatas de execução
-- evidência concreta de verificação
-- observações finais de qualidade/código
+TODO: atualizar este documento com nova evidência sempre que o fluxo 2024/2025 ou a UI mudarem.

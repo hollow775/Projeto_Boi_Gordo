@@ -1,14 +1,15 @@
 # src/collectors/comexstat.py
+import json
 import time
 import requests
 import pandas as pd
 from pathlib import Path
-from config.settings import DATE_RANGE, COMEX_API_URL, DATA_RAW
+from config.settings import DATE_RANGE, COMEX_API_URL, COMEX_NCM_CODES, DATA_RAW
 
-BEEF_HEADINGS = ["0201", "0202"]
 WAIT_SECONDS  = 12
 MAX_RETRIES   = 3
 CACHE_FILE    = DATA_RAW / "comexstat_cache.parquet"
+CACHE_META_FILE = DATA_RAW / "comexstat_cache.meta.json"
 
 
 def _fetch_year(year: int) -> pd.DataFrame:
@@ -16,7 +17,7 @@ def _fetch_year(year: int) -> pd.DataFrame:
         "flow":        "export",
         "monthDetail": True,
         "period":      {"from": f"{year}-01", "to": f"{year}-12"},
-        "filters":     [{"filter": "heading", "values": BEEF_HEADINGS}],
+        "filters":     [{"filter": "heading", "values": COMEX_NCM_CODES}],
         "details":     ["heading"],
         "metrics":     ["metricFOB", "metricKG"],
     }
@@ -96,6 +97,45 @@ def _fetch_all(start_year: int, end_year: int) -> pd.DataFrame:
     return pd.concat(frames).groupby("data").sum().sort_index()
 
 
+def _cache_metadata(start: str, end: str) -> dict:
+    return {
+        "start": start,
+        "end": end,
+        "start_year": int(start[:4]),
+        "end_year": int(end[:4]),
+        "ncm_codes": COMEX_NCM_CODES,
+        "api_url": COMEX_API_URL,
+    }
+
+
+def _read_cache_metadata() -> dict | None:
+    if not CACHE_META_FILE.exists():
+        return None
+    try:
+        return json.loads(CACHE_META_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _cache_matches_config(df: pd.DataFrame, expected_metadata: dict) -> bool:
+    metadata = _read_cache_metadata()
+    if metadata != expected_metadata:
+        return False
+    if df.empty or not isinstance(df.index, pd.DatetimeIndex):
+        return False
+    start_year = expected_metadata["start_year"]
+    end_year = expected_metadata["end_year"]
+    return df.index.min().year <= start_year and df.index.max().year >= end_year
+
+
+def _write_cache(df: pd.DataFrame, metadata: dict) -> None:
+    df.to_parquet(CACHE_FILE)
+    CACHE_META_FILE.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def load_comexstat(force: bool = False) -> pd.DataFrame:
     """
     Coleta exportacoes de carne bovina e retorna em frequencia diaria.
@@ -117,18 +157,26 @@ def load_comexstat(force: bool = False) -> pd.DataFrame:
     end        = DATE_RANGE["end"]
     start_year = int(start[:4])
     end_year   = int(end[:4])
+    expected_metadata = _cache_metadata(start, end)
 
     # Carrega do cache se disponivel
     if CACHE_FILE.exists() and not force:
-        print(f"[comexstat] Carregando do cache: {CACHE_FILE}")
-        df = pd.read_parquet(CACHE_FILE)
+        cached_df = pd.read_parquet(CACHE_FILE)
+        if _cache_matches_config(cached_df, expected_metadata):
+            print(f"[comexstat] Carregando do cache: {CACHE_FILE}")
+            df = cached_df
+        else:
+            print("[comexstat] Cache incompatível com config atual; re-coletando via API.")
+            df = _fetch_all(start_year, end_year)
+            _write_cache(df, expected_metadata)
+            print(f"[comexstat] Cache salvo em: {CACHE_FILE}")
     else:
         print(f"[comexstat] Iniciando coleta {start_year}-{end_year} via API...")
         print(f"[comexstat] Estimativa: ~{(end_year - start_year + 1) * WAIT_SECONDS // 60 + 1} minutos.")
         df = _fetch_all(start_year, end_year)
 
         # Salva cache
-        df.to_parquet(CACHE_FILE)
+        _write_cache(df, expected_metadata)
         print(f"[comexstat] Cache salvo em: {CACHE_FILE}")
 
     df = df.loc[start:end]

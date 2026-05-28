@@ -11,7 +11,7 @@
 #
 # Execucao:
 #   python notebooks/shap_analysis.py
-#   python notebooks/shap_analysis.py --horizonte 15 --modelo rf
+#   python notebooks/shap_analysis.py --horizonte 15 --modelo random_forest
 # ==============================================================
 
 import sys
@@ -47,13 +47,13 @@ def gerar_shap(horizonte: int, model_type: str, top_n: int, n_amostras: int):
         print("[shap] Biblioteca nao instalada. Execute: pip install shap")
         return
 
-    model_label = {"xgb": "XGBoost", "rf": "Random Forest"}.get(model_type, model_type)
+    model_label = {"xgboost": "XGBoost", "random_forest": "Random Forest"}.get(model_type, model_type)
 
     print(f"\n[shap] Carregando modelo {model_label} — horizonte {horizonte}d...")
     df_valid, X_df, feature_cols, target_col = carregar_dados(horizonte)
     model = joblib.load(MODELS_DIR / f"{model_type}_h{horizonte}d.joblib")
 
-    # Usa amostra para nao sobrecarregar memoria (RF e mais lento)
+    # Usa amostra para nao sobrecarregar memoria (Random Forest e mais lento)
     if len(X_df) > n_amostras:
         X_sample = X_df.sample(n=n_amostras, random_state=42)
         print(f"[shap] Usando amostra de {n_amostras} observacoes de {len(X_df)} totais.")
@@ -124,9 +124,9 @@ def main():
     parser.add_argument("--horizonte", type=int, default=1,
                         choices=[1, 15, 30, 60],
                         help="Horizonte de previsao em dias (default: 1)")
-    parser.add_argument("--modelo", type=str, default="xgb",
-                        choices=["xgb", "rf"],
-                        help="Modelo a analisar: xgb ou rf (default: xgb)")
+    parser.add_argument("--modelo", type=str, default="xgboost",
+                        choices=["xgboost", "random_forest"],
+                        help="Modelo a analisar: xgboost ou random_forest (default: xgboost)")
     parser.add_argument("--top-n", type=int, default=15,
                         help="Numero de features exibidas (default: 15)")
     parser.add_argument("--amostras", type=int, default=500,

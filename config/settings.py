@@ -18,11 +18,17 @@ for d in [DATA_RAW, DATA_PROCESSED, MODELS_DIR]:
 STATE = {
     "name": "São Paulo",
     "ibge_code": "35",          # Código IBGE do estado no SIDRA
-    "cepea_file": str(DATA_RAW / "cepea_sp.xlsx"),   # planilha exportada do CEPEA
     # Bounding box [lon_min, lat_min, lon_max, lat_max] para Copernicus ERA5
     "copernicus_bbox": [-53.1, -25.3, -44.0, -19.8],
     # Nome do arquivo ERA5 que será baixado
     "era5_file": str(DATA_RAW / "era5_sp.nc"),
+}
+
+# ── Arquivos CEPEA ────────────────────────────────────────────
+CEPEA_FILES = {
+    "boi_gordo": DATA_RAW / "cepea_boi_gordo.xlsx",
+    "bezerro": DATA_RAW / "cepea_bezerro.xlsx",
+    "milho": DATA_RAW / "cepea_milho.xlsx",
 }
 
 # ── Período de análise ─────────────────────────────────────────
@@ -35,7 +41,8 @@ DATE_RANGE = {
 HORIZONS = [1, 7, 15, 30, 60]
 
 # ── Deflação ───────────────────────────────────────────────────
-# Código da série de inflação no Banco Central (SGS: 433 para IPCA, 190 para IGP-DI)
+# Código da série de inflação no Banco Central (SGS).
+# O projeto usa atualmente a série 190 (IGP-DI); 433 seria IPCA.
 INFLATION_SGS_CODE = 190
 # Mês de referência para deflação (formato YYYY-MM)
 DEFLATION_BASE = "2025-12"

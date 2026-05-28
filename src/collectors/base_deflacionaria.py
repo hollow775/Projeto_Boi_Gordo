@@ -1,6 +1,7 @@
 # src/collectors/base_deflacionaria.py
 # ==============================================================
-# Coleta o índice de inflação (IPCA ou IGP-DI) via API do Banco Central do Brasil (SGS).
+# Coleta a série de inflação configurada via API do Banco Central do Brasil (SGS).
+# A configuração atual usa SGS 190 (IGP-DI).
 #
 # Usado para deflacionar os preços nominais do CEPEA.
 # Documentação SGS: https://www.bcb.gov.br/estatisticas/tabelasespeciais

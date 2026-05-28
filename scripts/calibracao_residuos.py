@@ -1,4 +1,4 @@
-﻿"""
+"""
 Gera diagnósticos e pós-calibração (isotônica) das previsões OOF,
 corrigindo acentuação (UTF-8) e salvando gráficos/relatório.
 """

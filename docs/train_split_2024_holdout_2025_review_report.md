@@ -46,8 +46,8 @@ The legacy pipeline remains available through `main.py`.
 
 ### Risks / follow-ups
 
-1. `streamlit` is imported by `app_split_2024_holdout_2025.py`, but no `streamlit` entry was found in `requirements.txt`.
-2. `Tests/test_train_split_2024_ui_acceptance.py` still contains heuristic checks that skip two implemented behaviors; stronger coverage currently comes from:
+1. `streamlit` is imported by `app_split_2024_holdout_2025.py` and is declared in `requirements.txt`.
+2. TODO: refresh older heuristic acceptance checks in `Tests/test_train_split_2024_ui_acceptance.py` so they assert the integrated implementation directly. Stronger coverage currently comes from:
    - `Tests/test_split_2024_holdout_2025.py`
    - direct import/help smoke checks
 3. `build_feature_row_for_manual_inputs(...)` triggers `pandas` `PerformanceWarning` messages through `src/features/engineering.py`; this is not a functional failure, but it is a maintainability/performance smell worth future cleanup.
@@ -167,4 +167,4 @@ streamlit run app_split_2024_holdout_2025.py
 
 ## Final assessment
 
-The requested 2024/2025 split flow and UI are present and structured cleanly as a separate experiment path. The main remaining review concerns are reproducible dependency declaration for Streamlit and refreshing the older heuristic acceptance checks so they validate the landed implementation directly.
+The requested 2024/2025 split flow and UI are present and structured cleanly as a separate experiment path. The main remaining review concern is refreshing the older heuristic acceptance checks so they validate the landed implementation directly.

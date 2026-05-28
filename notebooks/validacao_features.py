@@ -114,7 +114,7 @@ def analise_permutation(X_df: pd.DataFrame, feature_cols: list, df_valid: pd.Dat
     print(f"PERMUTATION IMPORTANCE — Horizonte: {horizonte} dias")
     print(f"{'='*60}")
 
-    for model_type, label in [("xgb", "XGBoost"), ("rf", "Random Forest")]:
+    for model_type, label in [("xgboost", "XGBoost"), ("random_forest", "Random Forest")]:
         model = joblib.load(MODELS_DIR / f"{model_type}_h{horizonte}d.joblib")
         y     = df_valid[target_col].values
 

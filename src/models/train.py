@@ -39,7 +39,7 @@ XGBOOST_PARAMS = {
     "verbosity":        0,
 }
 
-RF_PARAMS = {
+RANDOM_FOREST_PARAMS = {
     "n_estimators": 500,
     "max_depth":    None,
     "min_samples_leaf": 5,
@@ -63,6 +63,7 @@ def _walk_forward_splits(
     n: int,
     min_train: int = MIN_TRAIN_DAYS,
     n_folds: int = N_FOLDS,
+    min_test_size: int = 1,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """
     Gera índices de treino/teste em expanding window.
@@ -72,18 +73,86 @@ def _walk_forward_splits(
         fold 2: treino=[0:1000],  teste=[1000:1270]
         ...
     """
-    test_size = (n - min_train) // n_folds
+    if n_folds < 1:
+        raise ValueError("n_folds deve ser >= 1.")
+    if min_train < 1:
+        raise ValueError("min_train deve ser >= 1.")
+    if min_test_size < 1:
+        raise ValueError("min_test_size deve ser >= 1.")
+    if n <= min_train:
+        raise ValueError(
+            f"Dados insuficientes para walk-forward: n={n}, min_train={min_train}."
+        )
+
+    available_test = n - min_train
+    if available_test < n_folds * min_test_size:
+        raise ValueError(
+            "Dados insuficientes para gerar folds de teste mínimos: "
+            f"disponível={available_test}, necessário={n_folds * min_test_size}."
+        )
+
+    test_size = available_test // n_folds
     splits = []
     for i in range(n_folds):
         train_end = min_train + i * test_size
-        test_end  = train_end + test_size
-        if test_end > n:
-            test_end = n
+        test_end = n if i == n_folds - 1 else train_end + test_size
         splits.append((
             np.arange(0, train_end),
             np.arange(train_end, test_end),
         ))
     return splits
+
+
+def _purge_train_rows_with_targets_in_test_window(
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    dates: pd.DatetimeIndex,
+    horizon: int,
+) -> np.ndarray:
+    """Remove training rows whose forecast target date falls inside the test window."""
+    if len(train_idx) == 0 or len(test_idx) == 0:
+        return train_idx
+
+    test_start = dates[test_idx[0]]
+    test_end = dates[test_idx[-1]]
+    target_dates = dates[train_idx] + pd.Timedelta(days=horizon)
+    keep_mask = (target_dates < test_start) | (target_dates > test_end)
+    return train_idx[keep_mask]
+
+
+def _purged_walk_forward_splits(
+    n: int,
+    dates: pd.DatetimeIndex,
+    horizon: int,
+    min_train: int = MIN_TRAIN_DAYS,
+    n_folds: int = N_FOLDS,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Build walk-forward splits and purge boundary rows with targets in test windows."""
+    base_splits = _walk_forward_splits(n, min_train=min_train, n_folds=n_folds)
+    return [
+        (
+            _purge_train_rows_with_targets_in_test_window(train_idx, test_idx, dates, horizon),
+            test_idx,
+        )
+        for train_idx, test_idx in base_splits
+    ]
+
+
+def _fit_imputation_medians(X_train: np.ndarray) -> np.ndarray:
+    X_train = np.asarray(X_train, dtype=float)
+    medians = []
+    for col_idx in range(X_train.shape[1]):
+        column = X_train[:, col_idx]
+        medians.append(0.0 if np.isnan(column).all() else float(np.nanmedian(column)))
+    return np.array(medians)
+
+
+def _apply_imputation_medians(X: np.ndarray, medians: np.ndarray) -> np.ndarray:
+    X_imputed = np.asarray(X, dtype=float).copy()
+    nan_mask = np.isnan(X_imputed)
+    if nan_mask.any():
+        X_imputed[nan_mask] = np.take(medians, np.where(nan_mask)[1])
+    return X_imputed
 
 
 def _assert_training_cutoff(df: pd.DataFrame) -> None:
@@ -106,44 +175,47 @@ def _tune_with_budget(
     """
     Executa uma busca reduzida com orçamento de tempo por horizonte
     e salva um log em data/processed/tuning_log_h{h}d.json.
-    Retorna os melhores hiperparâmetros encontrados para XGBoost e RF.
+    Retorna os melhores hiperparâmetros encontrados para XGBoost e Random Forest.
     """
     start = time.time()
     deadline = start + time_budget_min * 60
 
     # Usa o primeiro fold para avaliação rápida
     train_idx, test_idx = splits[0]
-    if len(test_idx) == 0:
+    if len(train_idx) == 0 or len(test_idx) == 0:
         log_path = DATA_PROCESSED / f"tuning_log_h{horizon}d.json"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-        return {"xgboost": XGBOOST_PARAMS.copy(), "random_forest": RF_PARAMS.copy()}
+        return {"xgboost": XGBOOST_PARAMS.copy(), "random_forest": RANDOM_FOREST_PARAMS.copy()}
 
-    X_train, X_val = X[train_idx], X[test_idx]
+    X_train_raw, X_val_raw = X[train_idx], X[test_idx]
+    imputation_medians = _fit_imputation_medians(X_train_raw)
+    X_train = _apply_imputation_medians(X_train_raw, imputation_medians)
+    X_val = _apply_imputation_medians(X_val_raw, imputation_medians)
     y_train, y_val = y[train_idx], y[test_idx]
 
-    xgb_candidates = [
+    xgboost_candidates = [
         {"n_estimators": 300, "learning_rate": 0.1, "max_depth": 4, "subsample": 0.9, "colsample_bytree": 0.9},
         {"n_estimators": 450, "learning_rate": 0.05, "max_depth": 6, "subsample": 0.8, "colsample_bytree": 0.8},
         {"n_estimators": 600, "learning_rate": 0.03, "max_depth": 8, "subsample": 0.7, "colsample_bytree": 0.7},
     ]
 
-    rf_candidates = [
+    random_forest_candidates = [
         {"n_estimators": 300, "max_depth": None, "min_samples_leaf": 2, "max_features": "sqrt"},
         {"n_estimators": 500, "max_depth": None, "min_samples_leaf": 5, "max_features": "sqrt"},
         {"n_estimators": 700, "max_depth": 20, "min_samples_leaf": 3, "max_features": 0.6},
     ]
 
     log_entries = []
-    best_params = {"xgboost": XGBOOST_PARAMS.copy(), "random_forest": RF_PARAMS.copy()}
-    best_mape_xgb = np.inf
-    best_mape_rf = np.inf
+    best_params = {"xgboost": XGBOOST_PARAMS.copy(), "random_forest": RANDOM_FOREST_PARAMS.copy()}
+    best_mape_xgboost = np.inf
+    best_mape_random_forest = np.inf
 
     def _remaining_time_ok() -> bool:
         return time.time() < deadline
 
-    for params in xgb_candidates:
+    for params in xgboost_candidates:
         if not _remaining_time_ok():
             break
         merged = {**XGBOOST_PARAMS, **params}
@@ -157,14 +229,14 @@ def _tune_with_budget(
             "metrics": metrics,
             "elapsed_seconds": round(time.time() - start, 2),
         })
-        if metrics["MAPE"] < best_mape_xgb:
-            best_mape_xgb = metrics["MAPE"]
+        if metrics["MAPE"] < best_mape_xgboost:
+            best_mape_xgboost = metrics["MAPE"]
             best_params["xgboost"] = merged
 
-    for params in rf_candidates:
+    for params in random_forest_candidates:
         if not _remaining_time_ok():
             break
-        merged = {**RF_PARAMS, **params}
+        merged = {**RANDOM_FOREST_PARAMS, **params}
         model = RandomForestRegressor(**merged)
         model.fit(X_train, y_train)
         preds = model.predict(X_val)
@@ -175,8 +247,8 @@ def _tune_with_budget(
             "metrics": metrics,
             "elapsed_seconds": round(time.time() - start, 2),
         })
-        if metrics["MAPE"] < best_mape_rf:
-            best_mape_rf = metrics["MAPE"]
+        if metrics["MAPE"] < best_mape_random_forest:
+            best_mape_random_forest = metrics["MAPE"]
             best_params["random_forest"] = merged
 
     log_path = DATA_PROCESSED / f"tuning_log_h{horizon}d.json"
@@ -200,6 +272,14 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return {"RMSE": rmse, "MAE": mae, "MAPE": mape}
 
 
+def _tag_fold_metrics(metrics: dict, fold_number: int, used_for_tuning: bool = False) -> dict:
+    return {
+        **metrics,
+        "fold": fold_number,
+        "used_for_tuning": used_for_tuning,
+    }
+
+
 def train_horizon(
     df: pd.DataFrame,
     horizon: int,
@@ -216,9 +296,9 @@ def train_horizon(
     -------
     dict com:
         "xgboost"     : modelo XGBoost treinado no dataset completo
-        "random_forest"      : modelo RF treinado no dataset completo
+        "random_forest"      : modelo Random Forest treinado no dataset completo
         "metricas_cv_xgboost": métricas walk-forward do XGBoost
-        "metricas_cv_random_forest" : métricas walk-forward do RF
+        "metricas_cv_random_forest" : métricas walk-forward do Random Forest
         "feature_cols"  : colunas de features usadas
         "out_of_fold_dataframe" : DataFrame com previsões OOF e valores reais
     """
@@ -239,18 +319,13 @@ def train_horizon(
     # Remove linhas onde target é NaN (fim da série)
     df_valid = df.dropna(subset=[target_col])
 
-    X = df_valid[feature_cols].values
+    X = df_valid[feature_cols].to_numpy(dtype=float)
     y = df_valid[target_col].values
     baseline_last_array = df_valid["baseline_last"].values
     baseline_ma7_array = df_valid["baseline_ma7"].values
 
-    # Substitui NaN em features por mediana (XGBoost tolera, RF não)
-    col_medians = np.nanmedian(X, axis=0)
-    nan_mask = np.isnan(X)
-    X[nan_mask] = np.take(col_medians, np.where(nan_mask)[1])
-
     n = len(X)
-    splits = _walk_forward_splits(n)
+    splits = _purged_walk_forward_splits(n, pd.DatetimeIndex(df_valid.index), horizon)
     best_params = _tune_with_budget(X, y, splits, horizon)
 
     metricas_cv_xgboost, metricas_cv_random_forest = [], []
@@ -262,32 +337,66 @@ def train_horizon(
     previsoes_random_forest_out_of_fold = []
     previsoes_baseline_last_out_of_fold = []
     previsoes_baseline_ma7_out_of_fold = []
-    previsao_baseline_escolhida_out_of_fold = []
+    previsoes_baseline_out_of_fold = []
 
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
-        X_train, X_test = X[train_idx], X[test_idx]
+        if len(train_idx) == 0 or len(test_idx) == 0:
+            print(
+                f"  [h{horizon}d | fold {fold_idx+1}/{len(splits)}] "
+                "fold ignorado: treino ou teste vazio apos purga temporal."
+            )
+            continue
+
+        X_train_raw, X_test_raw = X[train_idx], X[test_idx]
+        imputation_medians = _fit_imputation_medians(X_train_raw)
+        X_train = _apply_imputation_medians(X_train_raw, imputation_medians)
+        X_test = _apply_imputation_medians(X_test_raw, imputation_medians)
         y_train, y_test = y[train_idx], y[test_idx]
 
         # XGBoost
         xgboost = XGBRegressor(**best_params["xgboost"])
         xgboost.fit(X_train, y_train)
         previsao_xgboost = xgboost.predict(X_test)
-        metricas_cv_xgboost.append(_compute_metrics(y_test, previsao_xgboost))
+        metricas_cv_xgboost.append(
+            _tag_fold_metrics(
+                _compute_metrics(y_test, previsao_xgboost),
+                fold_number=fold_idx + 1,
+                used_for_tuning=(fold_idx == 0),
+            )
+        )
 
         # Random Forest
         random_forest = RandomForestRegressor(**best_params["random_forest"])
         random_forest.fit(X_train, y_train)
         previsao_random_forest = random_forest.predict(X_test)
-        metricas_cv_random_forest.append(_compute_metrics(y_test, previsao_random_forest))
+        metricas_cv_random_forest.append(
+            _tag_fold_metrics(
+                _compute_metrics(y_test, previsao_random_forest),
+                fold_number=fold_idx + 1,
+                used_for_tuning=(fold_idx == 0),
+            )
+        )
 
-        # Baselines ingênuos (último valor vs média 7 dias)
+        # Baselines ingênuos (último valor vs média 7 dias).
+        # A escolha entre eles usa apenas erro no periodo de treino do fold.
+        baseline_last_train_pred = baseline_last_array[train_idx]
+        baseline_ma7_train_pred = baseline_ma7_array[train_idx]
+        metrics_baseline_last_train = _compute_metrics(y_train, baseline_last_train_pred)
+        metrics_baseline_ma7_train = _compute_metrics(y_train, baseline_ma7_train_pred)
+        use_ma7 = metrics_baseline_ma7_train["MAPE"] <= metrics_baseline_last_train["MAPE"]
+
         baseline_last_pred = baseline_last_array[test_idx]
         baseline_ma7_pred = baseline_ma7_array[test_idx]
         metrics_baseline_last = _compute_metrics(y_test, baseline_last_pred)
         metrics_baseline_ma7 = _compute_metrics(y_test, baseline_ma7_pred)
-        use_ma7 = metrics_baseline_ma7["MAPE"] <= metrics_baseline_last["MAPE"]
         baseline_pred = baseline_ma7_pred if use_ma7 else baseline_last_pred
-        metricas_cv_baseline.append(metrics_baseline_ma7 if use_ma7 else metrics_baseline_last)
+        metricas_cv_baseline.append(
+            _tag_fold_metrics(
+                metrics_baseline_ma7 if use_ma7 else metrics_baseline_last,
+                fold_number=fold_idx + 1,
+                used_for_tuning=(fold_idx == 0),
+            )
+        )
 
         # Salva o dataset de log de previsoes out-of-fold para analise cega graficamente
         test_dates = df_valid.index[test_idx]
@@ -297,23 +406,26 @@ def train_horizon(
         previsoes_random_forest_out_of_fold.extend(previsao_random_forest)
         previsoes_baseline_last_out_of_fold.extend(baseline_last_pred)
         previsoes_baseline_ma7_out_of_fold.extend(baseline_ma7_pred)
-        previsao_baseline_escolhida_out_of_fold.extend(baseline_pred)
+        previsoes_baseline_out_of_fold.extend(baseline_pred)
 
         print(
             f"  [h{horizon}d | fold {fold_idx+1}/{len(splits)}] "
-            f"XGB MAPE={metricas_cv_xgboost[-1]['MAPE']:.2f}% | "
-            f"RF  MAPE={metricas_cv_random_forest[-1]['MAPE']:.2f}% | "
+            f"XGBoost MAPE={metricas_cv_xgboost[-1]['MAPE']:.2f}% | "
+            f"Random Forest MAPE={metricas_cv_random_forest[-1]['MAPE']:.2f}% | "
             f"Baseline({'MA7' if use_ma7 else 'ultimo'}) MAPE={metricas_cv_baseline[-1]['MAPE']:.2f}%"
         )
 
     # Treina modelo final em todo o dataset (sem split)
     print(f"  [h{horizon}d] Treinando modelo final em {n} observações...")
 
+    final_imputation_medians = _fit_imputation_medians(X)
+    X_final = _apply_imputation_medians(X, final_imputation_medians)
+
     xgboost_final = XGBRegressor(**best_params["xgboost"])
-    xgboost_final.fit(X, y)
+    xgboost_final.fit(X_final, y)
 
     random_forest_final = RandomForestRegressor(**best_params["random_forest"])
-    random_forest_final.fit(X, y)
+    random_forest_final.fit(X_final, y)
 
     # Salva modelos
     caminho_xgboost = MODELS_DIR / f"xgboost_h{horizon}d.joblib"
@@ -324,6 +436,8 @@ def train_horizon(
     # Salva nomes das features junto com o modelo
     feat_path = MODELS_DIR / f"feature_cols_h{horizon}d.joblib"
     joblib.dump(feature_cols, feat_path)
+    medians_path = MODELS_DIR / f"feature_medians_h{horizon}d.joblib"
+    joblib.dump(final_imputation_medians, medians_path)
 
     print(f"  [h{horizon}d] Modelos salvos em {MODELS_DIR}")
 
@@ -333,7 +447,7 @@ def train_horizon(
         "previsao_random_forest": previsoes_random_forest_out_of_fold,
         "baseline_last": previsoes_baseline_last_out_of_fold,
         "baseline_ma7": previsoes_baseline_ma7_out_of_fold,
-        "baseline_escolhida": previsao_baseline_escolhida_out_of_fold,
+        "previsao_baseline": previsoes_baseline_out_of_fold,
     }, index=datas_out_of_fold)
 
     return {
@@ -343,6 +457,8 @@ def train_horizon(
         "metricas_cv_random_forest":  metricas_cv_random_forest,
         "metricas_cv_baseline": metricas_cv_baseline,
         "feature_cols":   feature_cols,
+        "feature_medians": final_imputation_medians,
+        "tuning_fold": 1,
         "out_of_fold_dataframe": out_of_fold_dataframe,
     }
 

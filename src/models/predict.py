@@ -25,6 +25,20 @@ def _load_feature_cols(horizonte_dias: int) -> list[str]:
     return joblib.load(MODELS_DIR / f"feature_cols_h{horizonte_dias}d.joblib")
 
 
+def _load_feature_medians(horizonte_dias: int) -> np.ndarray:
+    path = MODELS_DIR / f"feature_medians_h{horizonte_dias}d.joblib"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Medianas de imputacao nao encontradas: {path}\n"
+            "Reexecute main.py --train para gerar os artefatos de imputacao."
+        )
+    return joblib.load(path)
+
+
+def _fill_with_training_medians(X_df: pd.DataFrame, medians: np.ndarray) -> pd.DataFrame:
+    return X_df.fillna(pd.Series(medians, index=X_df.columns))
+
+
 def predict_latest(dataframe_features: pd.DataFrame) -> pd.DataFrame:
     """
     Gera previsões a partir do último registro disponível no DataFrame.
@@ -45,13 +59,11 @@ def predict_latest(dataframe_features: pd.DataFrame) -> pd.DataFrame:
 
     for horizonte_dias in HORIZONS:
         feature_cols = _load_feature_cols(horizonte_dias)
+        feature_medians = _load_feature_medians(horizonte_dias)
 
         # Última linha com todas as features preenchidas
-        valid_rows = dataframe_features[feature_cols].dropna()
-        if len(valid_rows) == 0:
-            print(f"DEBUG: valid_rows is empty for h={horizonte_dias}! NaNs por coluna:")
-            print(dataframe_features[feature_cols].isna().sum().sort_values().tail(15))
-        row = valid_rows.iloc[[-1]]
+        row = dataframe_features[feature_cols].iloc[[-1]].copy()
+        row = _fill_with_training_medians(row, feature_medians)
 
         X = row.values
 
@@ -91,11 +103,11 @@ def predict_period(dataframe_features: pd.DataFrame, data_inicial: str, data_fin
 
     for horizonte_dias in HORIZONS:
         feature_cols = _load_feature_cols(horizonte_dias)
+        feature_medians = _load_feature_medians(horizonte_dias)
         target_col   = f"target_h{horizonte_dias}d"
 
         X_df = sub[feature_cols].copy()
-        col_medians = X_df.median()
-        X_df = X_df.fillna(col_medians)
+        X_df = _fill_with_training_medians(X_df, feature_medians)
 
         X = X_df.values
 

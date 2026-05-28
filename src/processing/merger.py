@@ -26,7 +26,7 @@ PRICE_COLUMNS = ["preco_boi_gordo", "preco_bezerro", "preco_milho"]
 # ao fim do mês → aplicar lag mensal antes de expandir para frequência diária
 # para evitar vazamento de informação (leakage).
 MONTHLY_COLUMNS = [
-    "inflation_index",  # IPCA/IGP encadeado – divulgado mensalmente
+    "inflation_index",  # IGP-DI encadeado via SGS 190 – divulgado mensalmente
     "precipitacao_mm",  # ERA5 mensal
     "export_usd_fob",   # ComexStat mensal
     "export_kg",
@@ -159,12 +159,13 @@ def build_dataset(
 
     df = df.sort_index()
 
+    # Aplica lag mensal e forward fill diário nas séries de baixa frequência
+    # antes da deflação; assim os preços reais usam apenas índice de inflação
+    # já conhecido no momento da previsão.
+    df = _lag_monthly_then_ffill(df)
+
     if deflate:
         df = _deflate_prices(df)
-
-    # Após deflação, aplica lag mensal e forward fill diário nas séries
-    # de baixa frequência para evitar leakage intra-mês nos modelos.
-    df = _lag_monthly_then_ffill(df)
 
     df = _annotate_holdout(df, cutoff=HOLDOUT_CUTOFF)
 

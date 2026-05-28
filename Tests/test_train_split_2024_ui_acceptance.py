@@ -125,6 +125,23 @@ class FutureImplementationContractTests(unittest.TestCase):
         self.assertRegex(source, r"input_cols\s*=\s*st\.columns\(\s*2")
         self.assertIn("idx % 2", source)
 
+    def test_history_window_options_are_available(self) -> None:
+        app_file = REPO_ROOT / "app_split_2024_holdout_2025.py"
+        if not app_file.exists():
+            self.skipTest("UI file not available in this branch yet.")
+
+        source = app_file.read_text(encoding="utf-8", errors="ignore")
+        for label in [
+            "Última semana",
+            "Último mês",
+            "Últimos 6 meses",
+            "Último ano",
+            "Últimos 5 anos",
+            "Desde 2010",
+        ]:
+            self.assertIn(label, source)
+        self.assertIn("Valor inicial (mínimo da série exibida)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

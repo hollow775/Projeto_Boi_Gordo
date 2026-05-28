@@ -153,6 +153,9 @@ class PredictManualCurveTests(unittest.TestCase):
             "src.experiments.split_2024_holdout_2025._load_feature_columns",
             return_value=["f1"],
         ), patch(
+            "src.experiments.split_2024_holdout_2025._load_feature_medians",
+            return_value=[0.0],
+        ), patch(
             "src.experiments.split_2024_holdout_2025._load_model",
             side_effect=fake_load_model,
         ):

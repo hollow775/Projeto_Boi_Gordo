@@ -19,7 +19,7 @@ def _expand_to_daily(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
     a última cotação para os finais de semana/feriados.
     """
     daily_index = pd.date_range(start=start, end=end, freq="D")
-    df = df.reindex(daily_index, method="ffill").bfill()
+    df = df.reindex(daily_index, method="ffill")
     df.index.name = "data"
     return df
 

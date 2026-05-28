@@ -181,7 +181,7 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
         - colunas _nominal (redundantes após deflação)
         - colunas target_h*
     """
-    exclude_patterns = ["target_h", "_nominal", "ipca_index", "baseline_"]
+    exclude_patterns = ["target_h", "_nominal", "baseline_"]
     # preco_boi_gordo sem lag seria leakage — excluir a coluna original
     direct_exclude = ["preco_boi_gordo"]
 

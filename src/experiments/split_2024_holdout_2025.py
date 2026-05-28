@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
 
@@ -211,6 +212,14 @@ def _load_feature_columns(paths: ExperimentPaths, horizon: int) -> list[str]:
     return _joblib().load(paths.models_dir / f"feature_cols_h{horizon}d.joblib")
 
 
+def _load_feature_medians(paths: ExperimentPaths, horizon: int) -> np.ndarray:
+    return _joblib().load(paths.models_dir / f"feature_medians_h{horizon}d.joblib")
+
+
+def _fill_with_training_medians(X_df: pd.DataFrame, medians: np.ndarray) -> pd.DataFrame:
+    return X_df.fillna(pd.Series(medians, index=X_df.columns))
+
+
 def evaluate_holdout(
     full_features_df: pd.DataFrame,
     paths: ExperimentPaths | None = None,
@@ -221,6 +230,7 @@ def evaluate_holdout(
 
     for horizon in HORIZONS:
         feature_columns = _load_feature_columns(paths, horizon)
+        feature_medians = _load_feature_medians(paths, horizon)
         target_column = f"target_h{horizon}d"
         holdout_slice = (
             full_features_df.loc[HOLDOUT_START:HOLDOUT_END]
@@ -234,7 +244,7 @@ def evaluate_holdout(
             continue
 
         X_df = holdout_slice[feature_columns].copy()
-        X_df = X_df.fillna(X_df.median(numeric_only=True))
+        X_df = _fill_with_training_medians(X_df, feature_medians)
         X = X_df.values
         y_true = holdout_slice[target_column].values
 
@@ -312,9 +322,11 @@ def _plot_holdout_predictions(
         alpha=0.9,
         label="Média dos modelos",
     )
-    axis.set_title(f"Holdout 2025 — previsão vs real (h={horizon}d)")
+    axis.set_title(f"Holdout 2025 - previsão vs. real (h={horizon}d)")
     axis.set_xlabel("Data alvo")
     axis.set_ylabel("Preço real (R$/arroba)")
+    axis.xaxis.set_major_locator(mdates.YearLocator(base=2))
+    axis.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     axis.grid(axis="y", linestyle="--", alpha=0.35)
     axis.legend()
     figure.autofmt_xdate()
@@ -382,8 +394,9 @@ def predict_manual_curve(
 
     for source_horizon in sorted(set(UI_HORIZON_SOURCES.values())):
         feature_columns = _load_feature_columns(paths, source_horizon)
+        feature_medians = _load_feature_medians(paths, source_horizon)
         X_df = feature_row[feature_columns].copy()
-        X_df = X_df.fillna(X_df.median(numeric_only=True))
+        X_df = _fill_with_training_medians(X_df, feature_medians)
         X = X_df.values
 
         prediction_xgboost = float(_load_model(paths, "xgboost", source_horizon).predict(X)[0])
