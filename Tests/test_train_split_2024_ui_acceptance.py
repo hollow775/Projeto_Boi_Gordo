@@ -68,7 +68,7 @@ class FutureImplementationContractTests(unittest.TestCase):
         streamlit_files = [
             path for path in candidate_files
             if re.search(
-                r"(^|\\n)\\s*(import\\s+streamlit|from\\s+streamlit\\s+import)\\b",
+                r"(^|\n)\s*(import\s+streamlit|from\s+streamlit\s+import)\b",
                 path.read_text(encoding="utf-8", errors="ignore").lower(),
             )
         ]
@@ -95,9 +95,9 @@ class FutureImplementationContractTests(unittest.TestCase):
             for path in candidate_files
         )
         rule_patterns = [
-            r"dia\\s*1.*h\\s*=\\s*1",
-            r"dias?\\s*2.*7.*h\\s*=\\s*7",
-            r"dias?\\s*8.*15.*h\\s*=\\s*15",
+            r"dia\s*1.*h1",
+            r"dias?\s*2.*7.*h7",
+            r"dias?\s*8.*15.*h15",
         ]
         if not all(re.search(pattern, combined_source, flags=re.DOTALL) for pattern in rule_patterns):
             self.skipTest("Daily 1..15 composed-curve rule not implemented in this branch yet.")
@@ -105,6 +105,27 @@ class FutureImplementationContractTests(unittest.TestCase):
         for pattern in rule_patterns:
             self.assertRegex(combined_source, pattern)
 
+    def test_history_chart_exposes_hover_tooltip_with_day_value(self) -> None:
+        app_file = REPO_ROOT / "app_split_2024_holdout_2025.py"
+        if not app_file.exists():
+            self.skipTest("UI file not available in this branch yet.")
+
+        source = app_file.read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("st.altair_chart", source)
+        self.assertIn("selection_point", source)
+        self.assertIn('Tooltip("data:T"', source)
+        self.assertIn("Valor (R$/arroba)", source)
+
+    def test_manual_form_uses_compact_two_column_layout(self) -> None:
+        app_file = REPO_ROOT / "app_split_2024_holdout_2025.py"
+        if not app_file.exists():
+            self.skipTest("UI file not available in this branch yet.")
+
+        source = app_file.read_text(encoding="utf-8", errors="ignore")
+        self.assertRegex(source, r"input_cols\s*=\s*st\.columns\(\s*2")
+        self.assertIn("idx % 2", source)
+
 
 if __name__ == "__main__":
     unittest.main()
+

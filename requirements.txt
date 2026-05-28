@@ -1,4 +1,4 @@
-﻿# requirements.txt
+# requirements.txt
 # ==============================================================
 # DependÃªncias do projeto â€” previsÃ£o de preÃ§o do Boi Gordo
 # Testado com Python 3.11+
@@ -39,7 +39,7 @@ xgboost>=2.0.0           # XGBRegressor
 joblib>=1.3.0            # salvar/carregar modelos treinados
 
 # â”€â”€ VisualizaÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
->=1.43.0        # interface web simples para simulacao
+streamlit>=1.43.0        # interface web simples para simulacao
 
 # â”€â”€ UtilitÃ¡rios de desenvolvimento â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 jupyter>=1.0.0           # notebooks exploratÃ³rios

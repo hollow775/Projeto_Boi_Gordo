@@ -178,7 +178,12 @@ def save_ui_reference_artifacts(
 ) -> None:
     paths = paths or get_experiment_paths()
     example_columns = _existing_manual_columns(clean_full_df)
-    example_df = clean_full_df.loc[[TRAIN_END], example_columns].copy()
+    training_slice = clean_full_df.loc[:TRAIN_END]
+    if training_slice.empty:
+        raise ValueError(
+            "Nao foi possivel gerar exemplo da UI: sem dados ate a data final de treino (2024-12-31)."
+        )
+    example_df = training_slice.tail(1).loc[:, example_columns].copy()
     example_df.index.name = "data"
     example_df.to_csv(paths.example_values_path)
 

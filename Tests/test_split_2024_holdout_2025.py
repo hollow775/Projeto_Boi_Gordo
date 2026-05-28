@@ -1,6 +1,6 @@
+import shutil
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import pandas as pd
@@ -14,6 +14,17 @@ from src.experiments.split_2024_holdout_2025 import (
     predict_manual_curve,
     save_ui_reference_artifacts,
 )
+
+TEST_TMP_ROOT = Path(__file__).resolve().parents[1] / "Tests" / "_tmp"
+TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def _fresh_tmp_dir(name: str) -> Path:
+    path = TEST_TMP_ROOT / name
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 class ComposeDailyForecastTests(unittest.TestCase):
@@ -76,45 +87,45 @@ class BuildFeatureRowForManualInputsTests(unittest.TestCase):
 
 class ExperimentPathsAndArtifactsTests(unittest.TestCase):
     def test_get_experiment_paths_creates_separate_directories(self):
-        with TemporaryDirectory() as tmp_dir:
-            paths = get_experiment_paths(Path(tmp_dir))
+        tmp_dir = _fresh_tmp_dir("paths")
+        paths = get_experiment_paths(tmp_dir)
 
-            self.assertTrue(paths.processed_dir.exists())
-            self.assertTrue(paths.models_dir.exists())
-            self.assertIn("train_split_2024_holdout_2025", str(paths.processed_dir))
-            self.assertIn("train_split_2024_holdout_2025", str(paths.models_dir))
+        self.assertTrue(paths.processed_dir.exists())
+        self.assertTrue(paths.models_dir.exists())
+        self.assertIn("train_split_2024_holdout_2025", str(paths.processed_dir))
+        self.assertIn("train_split_2024_holdout_2025", str(paths.models_dir))
 
     def test_save_ui_reference_artifacts_exports_example_and_recent_history(self):
-        with TemporaryDirectory() as tmp_dir:
-            paths = get_experiment_paths(Path(tmp_dir))
-            index = pd.date_range("2024-09-05", periods=120, freq="D")
-            clean_df = pd.DataFrame(
-                {
-                    "preco_boi_gordo": range(120),
-                    "preco_bezerro": range(120, 240),
-                    "preco_milho": range(240, 360),
-                    "abate_cabecas": range(360, 480),
-                    "abate_peso_ton": range(480, 600),
-                    "export_usd_fob": range(600, 720),
-                    "export_kg": range(720, 840),
-                    "precipitacao_mm": range(840, 960),
-                    "inflation_index": range(960, 1080),
-                    "cotacao_dolar_venda": range(1080, 1200),
-                },
-                index=index,
-            )
+        tmp_dir = _fresh_tmp_dir("artifacts")
+        paths = get_experiment_paths(tmp_dir)
+        index = pd.date_range("2024-09-05", periods=120, freq="D")
+        clean_df = pd.DataFrame(
+            {
+                "preco_boi_gordo": range(120),
+                "preco_bezerro": range(120, 240),
+                "preco_milho": range(240, 360),
+                "abate_cabecas": range(360, 480),
+                "abate_peso_ton": range(480, 600),
+                "export_usd_fob": range(600, 720),
+                "export_kg": range(720, 840),
+                "precipitacao_mm": range(840, 960),
+                "inflation_index": range(960, 1080),
+                "cotacao_dolar_venda": range(1080, 1200),
+            },
+            index=index,
+        )
 
-            save_ui_reference_artifacts(clean_df, paths=paths)
+        save_ui_reference_artifacts(clean_df, paths=paths)
 
-            self.assertTrue(paths.example_values_path.exists())
-            self.assertTrue(paths.ui_history_path.exists())
+        self.assertTrue(paths.example_values_path.exists())
+        self.assertTrue(paths.ui_history_path.exists())
 
-            example_df = pd.read_csv(paths.example_values_path, index_col="data", parse_dates=True)
-            history_df = pd.read_csv(paths.ui_history_path, index_col="data", parse_dates=True)
+        example_df = pd.read_csv(paths.example_values_path, index_col="data", parse_dates=True)
+        history_df = pd.read_csv(paths.ui_history_path, index_col="data", parse_dates=True)
 
-            self.assertEqual(example_df.index[0], TRAIN_END)
-            self.assertEqual(len(history_df), 120)
-            self.assertIn("preco_boi_gordo", history_df.columns)
+        self.assertEqual(example_df.index[0], TRAIN_END)
+        self.assertEqual(len(history_df), 120)
+        self.assertIn("preco_boi_gordo", history_df.columns)
 
 
 class PredictManualCurveTests(unittest.TestCase):
@@ -173,8 +184,8 @@ class UiManualValueParsingTests(unittest.TestCase):
                 }
             )
 
-        self.assertIn("Campos obrigatórios vazios", str(exc.exception))
-        self.assertIn("Campos inválidos", str(exc.exception))
+        self.assertIn("Campos obrigatorios vazios", str(exc.exception))
+        self.assertIn("Campos invalidos", str(exc.exception))
 
 
 if __name__ == "__main__":

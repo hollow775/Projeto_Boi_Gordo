@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import altair as alt
+import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
@@ -21,7 +23,7 @@ def _format_example_table(example_df: pd.DataFrame) -> pd.DataFrame:
     if example_df.empty:
         return example_df
     renamed = example_df.rename(columns=SERIES_LABELS).copy()
-    return renamed.T.rename(columns={renamed.index[0]: "Exemplo (último dia de treino)"})
+    return renamed.T.rename(columns={renamed.index[0]: "Exemplo (ultimo dia de treino)"})
 
 
 def _read_example_values(processed_dir):
@@ -33,8 +35,39 @@ def _read_example_values(processed_dir):
 
 def _render_history_chart(clean_full_df: pd.DataFrame) -> None:
     history_df = clean_full_df.loc[:, ["preco_boi_gordo"]].tail(120).copy()
-    st.subheader("Histórico real recente do boi gordo")
-    st.line_chart(history_df.rename(columns={"preco_boi_gordo": "Preço real"}))
+    chart_df = history_df.reset_index().rename(columns={"index": "data"})
+    st.subheader("Historico real recente do boi gordo")
+    hover = alt.selection_point(
+        nearest=True,
+        on="mouseover",
+        fields=["data"],
+        empty=False,
+    )
+
+    base = (
+        alt.Chart(chart_df)
+        .encode(
+            x=alt.X("data:T", title="Data"),
+            y=alt.Y("preco_boi_gordo:Q", title="R$/arroba"),
+        )
+    )
+    line = base.mark_line(color=ORANGE, strokeWidth=3)
+    points = (
+        base.mark_circle(color=GREEN, size=75)
+        .encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)),
+            tooltip=[
+                alt.Tooltip("data:T", title="Data", format="%d/%m/%Y"),
+                alt.Tooltip(
+                    "preco_boi_gordo:Q",
+                    title="Valor (R$/arroba)",
+                    format=".2f",
+                ),
+            ],
+        )
+        .add_params(hover)
+    )
+    st.altair_chart((line + points).properties(height=330), use_container_width=True)
 
 
 def _manual_input_form(clean_full_df: pd.DataFrame):
@@ -42,28 +75,32 @@ def _manual_input_form(clean_full_df: pd.DataFrame):
     last_history_date = clean_full_df.index.max().date()
 
     with st.form("forecast_form"):
-        st.markdown("### Preencha manualmente as variáveis do cenário")
-        forecast_base_date = st.date_input(
-            "Data-base do cenário",
-            value=last_history_date,
-            min_value=TRAIN_END.date(),
-            max_value=(HOLDOUT_END + pd.Timedelta(days=365)).date(),
-        )
-        values = {}
-        for column in example_columns:
-            values[column] = st.text_input(SERIES_LABELS[column], value="")
+        top_left, top_right = st.columns(2)
+        with top_left:
+            forecast_base_date = st.date_input(
+                "Data-base do cenario",
+                value=last_history_date,
+                min_value=TRAIN_END.date(),
+                max_value=(HOLDOUT_END + pd.Timedelta(days=365)).date(),
+            )
+        with top_right:
+            model_type = st.selectbox(
+                "Curva exibida",
+                options=[
+                    ("media_modelos", "Media dos modelos"),
+                    ("xgboost", "XGBoost"),
+                    ("random_forest", "Random Forest"),
+                ],
+                format_func=lambda option: option[1],
+            )[0]
 
-        model_type = st.selectbox(
-            "Curva exibida",
-            options=[
-                ("media_modelos", "Média dos modelos"),
-                ("xgboost", "XGBoost"),
-                ("random_forest", "Random Forest"),
-            ],
-            format_func=lambda option: option[1],
-        )[0]
-
-        submitted = st.form_submit_button("Gerar previsão 1..15 dias")
+        st.markdown("##### Variaveis do cenario")
+        values: dict[str, str] = {}
+        input_cols = st.columns(2, gap="small")
+        for idx, column in enumerate(example_columns):
+            with input_cols[idx % 2]:
+                values[column] = st.text_input(SERIES_LABELS[column], value="")
+        submitted = st.form_submit_button("Gerar previsao 1..15 dias")
     return submitted, forecast_base_date, model_type, values
 
 
@@ -84,19 +121,32 @@ def _parse_manual_values(values: dict[str, str]) -> dict[str, float]:
     if missing or invalid:
         messages = []
         if missing:
-            messages.append(f"Campos obrigatórios vazios: {', '.join(missing)}.")
+            messages.append(f"Campos obrigatorios vazios: {', '.join(missing)}.")
         if invalid:
-            messages.append(f"Campos inválidos: {', '.join(invalid)}.")
+            messages.append(f"Campos invalidos: {', '.join(invalid)}.")
         raise ValueError(" ".join(messages))
     return parsed
 
 
 def _render_forecast(curve_df: pd.DataFrame, anchors_df: pd.DataFrame) -> None:
     st.subheader("Curva prevista do dia 1 ao dia 15")
-    chart_df = curve_df.set_index("data_previsao")[["valor_previsto"]].rename(
-        columns={"valor_previsto": "Preço previsto"}
+
+    figure, axis = plt.subplots(figsize=(10, 4))
+    axis.plot(
+        curve_df["data_previsao"],
+        curve_df["valor_previsto"],
+        color=GREEN,
+        linewidth=2.2,
+        marker="o",
+        markersize=4,
     )
-    st.line_chart(chart_df)
+    axis.set_ylabel("R$/arroba")
+    axis.set_xlabel("Data prevista")
+    axis.grid(axis="y", linestyle="--", alpha=0.35)
+    figure.autofmt_xdate(rotation=25)
+    figure.tight_layout()
+    st.pyplot(figure, use_container_width=True)
+    plt.close(figure)
 
     st.caption(
         "Regra composta aplicada: dia 1 usa h1, dias 2..7 usam h7 e dias 8..15 usam h15."
@@ -110,14 +160,14 @@ def _render_forecast(curve_df: pd.DataFrame, anchors_df: pd.DataFrame) -> None:
         hide_index=True,
     )
 
-    st.subheader("Âncoras dos modelos usados na curva")
+    st.subheader("Ancoras dos modelos usados na curva")
     st.dataframe(
         anchors_df.round(2).rename(
             columns={
                 "horizonte_modelo": "Horizonte do modelo",
                 "previsao_xgboost": "XGBoost",
                 "previsao_random_forest": "Random Forest",
-                "media_modelos": "Média",
+                "media_modelos": "Media",
             }
         ),
         use_container_width=True,
@@ -126,15 +176,24 @@ def _render_forecast(curve_df: pd.DataFrame, anchors_df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Boi Gordo — fluxo 2024/2025", layout="wide")
+    st.set_page_config(page_title="Boi Gordo - fluxo 2024/2025", layout="wide")
     st.markdown(
         f"""
         <style>
             .stApp {{
-                background: linear-gradient(180deg, #fffaf3 0%, #ffffff 30%);
+                background: linear-gradient(180deg, #f2f8f1 0%, #fff8ef 65%);
+                color: #1f2937;
             }}
-            h1, h2, h3 {{
+            .stApp, .stMarkdown, .stCaption, label, p, span, div {{
+                color: #1f2937;
+            }}
+            h1, h2, h3, h4 {{
                 color: {GREEN};
+            }}
+            [data-testid="stForm"], [data-testid="stVerticalBlockBorderWrapper"] {{
+                background: rgba(255,255,255,0.78);
+                border: 1px solid #e9efe4;
+                border-radius: 12px;
             }}
             .stButton button, .stFormSubmitButton button {{
                 background-color: {ORANGE};
@@ -145,9 +204,9 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.title("Previsão do boi gordo — treino até 2024 e holdout 2025")
+    st.title("Previsao do boi gordo - treino ate 2024 e holdout 2025")
     st.caption(
-        "Interface simples para explorar cenários manuais com os modelos treinados até 2024-12-31."
+        "Interface simples para explorar cenarios manuais com modelos treinados ate 2024-12-31."
     )
 
     paths = get_experiment_paths()
@@ -157,7 +216,7 @@ def main() -> None:
         and paths.cache_clean_path.exists()
     ):
         st.error(
-            "Artefatos do fluxo 2024/2025 ainda não foram gerados. "
+            "Artefatos do fluxo 2024/2025 ainda nao foram gerados. "
             "Execute `python main_split_2024_holdout_2025.py --full` primeiro."
         )
         return
@@ -165,15 +224,16 @@ def main() -> None:
     _, _, clean_full_df = load_or_build_feature_datasets(use_cache=True, paths=paths)
     example_df = _read_example_values(paths.processed_dir)
 
-    left, right = st.columns([1.4, 1.0])
+    left, right = st.columns([1.3, 1.1], gap="large")
     with left:
-        _render_history_chart(clean_full_df)
+        with st.container(border=True):
+            _render_history_chart(clean_full_df)
     with right:
-        st.subheader("Exemplo visual de preenchimento")
-        st.caption("Referência do último dia de treino: 2024-12-31. Os campos abaixo continuam manuais.")
-        st.dataframe(_format_example_table(example_df), use_container_width=True)
-
-    submitted, forecast_base_date, model_type, values = _manual_input_form(clean_full_df)
+        with st.container(border=True):
+            st.subheader("Preenchimento rapido")
+            st.caption("Exemplo do ultimo dia de treino (2024-12-31) para facilitar o preenchimento manual.")
+            st.dataframe(_format_example_table(example_df), use_container_width=True)
+            submitted, forecast_base_date, model_type, values = _manual_input_form(clean_full_df)
     if not submitted:
         return
 
