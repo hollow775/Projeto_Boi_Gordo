@@ -11,7 +11,13 @@ DATA_RAW = ROOT_DIR / "data" / "raw"
 DATA_PROCESSED = ROOT_DIR / "data" / "processed"
 MODELS_DIR = ROOT_DIR / "models_saved"
 
-for d in [DATA_RAW, DATA_PROCESSED, MODELS_DIR]:
+# ── Pipeline de produção ───────────────────────────────────────
+LOGS_DIR = ROOT_DIR / "logs"
+DATA_OUTPUTS = ROOT_DIR / "data" / "outputs"
+LAST_RUN_PATH = ROOT_DIR / "data" / "last_run.json"
+MODELS_VERSIONED_DIR = MODELS_DIR / "versioned"
+
+for d in [DATA_RAW, DATA_PROCESSED, MODELS_DIR, LOGS_DIR, DATA_OUTPUTS, MODELS_VERSIONED_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # ── Estado alvo ────────────────────────────────────────────────
