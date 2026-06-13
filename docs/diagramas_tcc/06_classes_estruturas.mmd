@@ -1,0 +1,67 @@
+classDiagram
+    class ExperimentPaths {
+        +Path root_dir
+        +Path processed_dir
+        +Path models_dir
+        +Path charts_dir
+        +Path holdout_dir
+        +Path cache_train_path
+        +Path cache_full_path
+        +Path cache_clean_path
+        +Path train_results_path
+        +Path holdout_metrics_path
+        +Path example_values_path
+        +Path ui_history_path
+    }
+
+    class ManualSourceRecord {
+        +str source_name
+        +Path file_path
+        +str file_hash_sha256
+        +int rows_loaded
+        +Timestamp | None effective_start_date
+        +Timestamp | None effective_end_date
+        +int | None manifest_id
+    }
+
+    class ProductionSourceSpec {
+        +str source_name
+        +str table_name
+        +Callable loader
+    }
+
+    class MySQLConfig {
+        +str host
+        +int port
+        +str database
+        +str user
+        +str password
+    }
+
+    class ProductionPolicy {
+        +Path root_dir
+        +str slug
+        +None training_cutoff
+        +bool allow_future_holdout_tail
+        +processed_dir()
+        +models_dir()
+        +outputs_dir()
+        +last_run_path()
+        +ensure_directories()
+    }
+
+    class ProductionTrainingRun {
+        +str version
+        +datetime trained_at_utc
+        +Timestamp train_start_date
+        +Timestamp train_end_date
+        +Path version_path
+        +Path metrics_path
+        +Path metrics_summary_path
+        +bool promoted
+    }
+
+    ExperimentPaths ..> ProductionPolicy : "separam artefatos por trilha"
+    ProductionSourceSpec ..> MySQLConfig : "usa conexão para persistir fontes"
+    ManualSourceRecord ..> MySQLConfig : "registra CEPEA manual"
+    ProductionTrainingRun ..> ProductionPolicy : "salva versões em pastas de produção"

@@ -1,0 +1,41 @@
+flowchart LR
+    subgraph Fontes["Fontes de dados"]
+        CEPEA["CEPEA\npreço do boi gordo"]
+        BCB["BCB PTAX\ncâmbio"]
+        SIDRA["IBGE SIDRA\nindicadores"]
+        COMEX["ComexStat\nexportações"]
+        CLIMA["Copernicus ERA5\nclima"]
+        DEFL["Base deflacionária\níndice de preços"]
+    end
+
+    subgraph Codigo["Arquitetura do código"]
+        COL["src/collectors\ncoleta e cache"]
+        PROC["src/processing\nlimpeza, junção e deflação"]
+        FEAT["src/features\nengenharia de atributos"]
+        MOD["src/models\ntreino, avaliação e predição"]
+        EXP["src/experiments\nrecorte acadêmico 2024/2025"]
+        PROD["src/production\nrotina de produção e MySQL"]
+        APP["app_split_2024_holdout_2025.py\ninterface Streamlit"]
+        EXPOR["src/export\nCSV e saídas para site"]
+    end
+
+    subgraph Artefatos["Artefatos gerados"]
+        DATA["data/processed\ndatasets, métricas e gráficos"]
+        MODELS["models_saved\nmodelos Random Forest e XGBoost"]
+        OUT["data/outputs\nprevisões e histórico exportado"]
+    end
+
+    CEPEA --> COL
+    BCB --> COL
+    SIDRA --> COL
+    COMEX --> COL
+    CLIMA --> COL
+    DEFL --> COL
+    COL --> PROC --> FEAT --> MOD
+    FEAT --> EXP
+    MOD --> DATA
+    MOD --> MODELS
+    EXP --> APP
+    PROD --> MOD
+    PROD --> EXPOR --> OUT
+    APP --> OUT

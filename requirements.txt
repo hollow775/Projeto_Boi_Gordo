@@ -35,6 +35,9 @@ scipy>=1.11.0            # interpolação usada pelo xarray
 scikit-learn>=1.4.0      # RandomForestRegressor, métricas
 xgboost>=2.0.0           # XGBRegressor
 
+# ── Banco de dados de produção ─────────────────────────────────
+mysql-connector-python>=8.4.0  # conexão MySQL para pipeline de produção
+
 # ── Serialização de modelos ────────────────────────────────────
 joblib>=1.3.0            # salvar/carregar modelos treinados
 

@@ -1,0 +1,20 @@
+sequenceDiagram
+    actor Usuario as Usuário
+    participant App as Interface Streamlit
+    participant Last as Registro da última execução
+    participant Hist as Histórico exportado
+    participant Pred as Previsões exportadas
+    participant Vis as Visualizações
+
+    Usuario->>App: Abre a interface web
+    App->>Last: Lê data da última execução do pipeline
+    Last-->>App: Timestamp ou aviso de indisponibilidade
+    App->>Hist: Carrega histórico real do boi gordo
+    Hist-->>App: Série histórica para análise visual
+    App->>Pred: Carrega previsões já exportadas pelo pipeline
+    Pred-->>App: Tabela de previsões por data e horizonte
+    App->>Vis: Calcula sinais de variação recente
+    Vis-->>App: Indicadores de curto prazo
+    App-->>Usuario: Mostra data da execução, sinais, gráfico histórico e previsões
+    Note over App: A interface atual consome artefatos exportados.
+    Note over App: A predição manual existe no experimento e não é chamada nesta tela.

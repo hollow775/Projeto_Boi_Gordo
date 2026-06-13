@@ -57,6 +57,7 @@ N_FOLDS = 5
 # Limites de segurança e orçamento de tuning
 CUTOFF_DATE = pd.Timestamp("2025-12-31")
 TUNING_BUDGET_MIN = 10
+_DEFAULT_CUTOFF = object()
 
 
 def _walk_forward_splits(
@@ -157,11 +158,18 @@ def _apply_imputation_medians(X: np.ndarray, medians: np.ndarray) -> np.ndarray:
 
 def _assert_training_cutoff(df: pd.DataFrame) -> None:
     """Garante que dados de treino/tuning não ultrapassem 2025-12-31."""
+    _assert_training_cutoff_for(df, CUTOFF_DATE)
+
+
+def _assert_training_cutoff_for(df: pd.DataFrame, cutoff_date: pd.Timestamp | None) -> None:
+    """Validate a lane-specific training cutoff when one is configured."""
+    if cutoff_date is None:
+        return
     max_date = pd.to_datetime(df.index.max())
-    if max_date > CUTOFF_DATE:
+    if max_date > cutoff_date:
         raise AssertionError(
             f"Dataset de treino/tuning com data máxima {max_date.date()} "
-            f"ultrapassa o limite permitido de {CUTOFF_DATE.date()}."
+            f"ultrapassa o limite permitido de {cutoff_date.date()}."
         )
 
 
@@ -171,6 +179,7 @@ def _tune_with_budget(
     splits: list[tuple[np.ndarray, np.ndarray]],
     horizon: int,
     time_budget_min: int = TUNING_BUDGET_MIN,
+    data_processed_dir=None,
 ) -> dict:
     """
     Executa uma busca reduzida com orçamento de tempo por horizonte
@@ -178,12 +187,13 @@ def _tune_with_budget(
     Retorna os melhores hiperparâmetros encontrados para XGBoost e Random Forest.
     """
     start = time.time()
+    data_processed_dir = data_processed_dir or DATA_PROCESSED
     deadline = start + time_budget_min * 60
 
     # Usa o primeiro fold para avaliação rápida
     train_idx, test_idx = splits[0]
     if len(train_idx) == 0 or len(test_idx) == 0:
-        log_path = DATA_PROCESSED / f"tuning_log_h{horizon}d.json"
+        log_path = data_processed_dir / f"tuning_log_h{horizon}d.json"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
@@ -251,7 +261,7 @@ def _tune_with_budget(
             best_mape_random_forest = metrics["MAPE"]
             best_params["random_forest"] = merged
 
-    log_path = DATA_PROCESSED / f"tuning_log_h{horizon}d.json"
+    log_path = data_processed_dir / f"tuning_log_h{horizon}d.json"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as f:
         json.dump(log_entries, f, ensure_ascii=False, indent=2)
@@ -283,6 +293,9 @@ def _tag_fold_metrics(metrics: dict, fold_number: int, used_for_tuning: bool = F
 def train_horizon(
     df: pd.DataFrame,
     horizon: int,
+    models_dir=None,
+    data_processed_dir=None,
+    cutoff_date=_DEFAULT_CUTOFF,
 ) -> dict:
     """
     Treina XGBoost e Random Forest para um horizonte específico.
@@ -306,7 +319,10 @@ def train_horizon(
     if target_col not in df.columns:
         raise KeyError(f"Target '{target_col}' não encontrado.")
 
-    _assert_training_cutoff(df)
+    models_dir = models_dir or MODELS_DIR
+    data_processed_dir = data_processed_dir or DATA_PROCESSED
+    cutoff_date = CUTOFF_DATE if cutoff_date is _DEFAULT_CUTOFF else cutoff_date
+    _assert_training_cutoff_for(df, cutoff_date)
     if "preco_boi_gordo" not in df.columns:
         raise KeyError("Coluna 'preco_boi_gordo' é necessária para baseline ingênuo.")
 
@@ -326,7 +342,7 @@ def train_horizon(
 
     n = len(X)
     splits = _purged_walk_forward_splits(n, pd.DatetimeIndex(df_valid.index), horizon)
-    best_params = _tune_with_budget(X, y, splits, horizon)
+    best_params = _tune_with_budget(X, y, splits, horizon, data_processed_dir=data_processed_dir)
 
     metricas_cv_xgboost, metricas_cv_random_forest = [], []
     metricas_cv_baseline = []
@@ -428,18 +444,18 @@ def train_horizon(
     random_forest_final.fit(X_final, y)
 
     # Salva modelos
-    caminho_xgboost = MODELS_DIR / f"xgboost_h{horizon}d.joblib"
-    caminho_random_forest  = MODELS_DIR / f"random_forest_h{horizon}d.joblib"
+    caminho_xgboost = models_dir / f"xgboost_h{horizon}d.joblib"
+    caminho_random_forest  = models_dir / f"random_forest_h{horizon}d.joblib"
     joblib.dump(xgboost_final, caminho_xgboost)
     joblib.dump(random_forest_final,  caminho_random_forest)
 
     # Salva nomes das features junto com o modelo
-    feat_path = MODELS_DIR / f"feature_cols_h{horizon}d.joblib"
+    feat_path = models_dir / f"feature_cols_h{horizon}d.joblib"
     joblib.dump(feature_cols, feat_path)
-    medians_path = MODELS_DIR / f"feature_medians_h{horizon}d.joblib"
+    medians_path = models_dir / f"feature_medians_h{horizon}d.joblib"
     joblib.dump(final_imputation_medians, medians_path)
 
-    print(f"  [h{horizon}d] Modelos salvos em {MODELS_DIR}")
+    print(f"  [h{horizon}d] Modelos salvos em {models_dir}")
 
     out_of_fold_dataframe = pd.DataFrame({
         "y_true": y_verdadeiro_out_of_fold,
@@ -463,7 +479,12 @@ def train_horizon(
     }
 
 
-def train_all(df: pd.DataFrame) -> dict:
+def train_all(
+    df: pd.DataFrame,
+    models_dir=None,
+    data_processed_dir=None,
+    cutoff_date=_DEFAULT_CUTOFF,
+) -> dict:
     """
     Executa o treinamento para todos os horizontes definidos em HORIZONS.
 
@@ -472,8 +493,17 @@ def train_all(df: pd.DataFrame) -> dict:
     dict keyed por horizonte (int): resultados de train_horizon
     """
     results = {}
+    models_dir = models_dir or MODELS_DIR
+    data_processed_dir = data_processed_dir or DATA_PROCESSED
+    cutoff_date = CUTOFF_DATE if cutoff_date is _DEFAULT_CUTOFF else cutoff_date
     for h in HORIZONS:
         print(f"\n[train] Horizonte: {h} dias")
-        results[h] = train_horizon(df, h)
+        results[h] = train_horizon(
+            df,
+            h,
+            models_dir=models_dir,
+            data_processed_dir=data_processed_dir,
+            cutoff_date=cutoff_date,
+        )
 
     return results

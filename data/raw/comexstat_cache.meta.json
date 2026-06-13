@@ -1,0 +1,11 @@
+{
+  "api_url": "https://api-comexstat.mdic.gov.br/general",
+  "end": "2025-12-31",
+  "end_year": 2025,
+  "ncm_codes": [
+    "0201",
+    "0202"
+  ],
+  "start": "2010-01-01",
+  "start_year": 2010
+}

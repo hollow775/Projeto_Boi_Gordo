@@ -7,6 +7,8 @@ import pandas as pd
 
 import app_split_2024_holdout_2025 as ui_app
 from src.experiments.split_2024_holdout_2025 import (
+    HOLDOUT_END,
+    HOLDOUT_START,
     TRAIN_END,
     build_feature_row_for_manual_inputs,
     compose_daily_forecast,
@@ -86,6 +88,11 @@ class BuildFeatureRowForManualInputsTests(unittest.TestCase):
 
 
 class ExperimentPathsAndArtifactsTests(unittest.TestCase):
+    def test_tcc_split_dates_remain_locked_for_academic_validation(self):
+        self.assertEqual(TRAIN_END, pd.Timestamp("2024-12-31"))
+        self.assertEqual(HOLDOUT_START, pd.Timestamp("2025-01-01"))
+        self.assertEqual(HOLDOUT_END, pd.Timestamp("2025-12-31"))
+
     def test_get_experiment_paths_creates_separate_directories(self):
         tmp_dir = _fresh_tmp_dir("paths")
         paths = get_experiment_paths(tmp_dir)
