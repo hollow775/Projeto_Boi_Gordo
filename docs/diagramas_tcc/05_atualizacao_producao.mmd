@@ -1,18 +1,18 @@
 flowchart TD
     TITULO["Fluxo de atualização de produção"]
-    A["Rotina diária local\nproduction_daily.py"] --> B{"Inicializar banco?"}
-    B -->|"Sim"| C["Criar schema MySQL\nsrc/production/db.py"]
+    A["Rotina diária local<br/>production_daily.py"] --> B{"Inicializar banco?"}
+    B -->|"Sim"| C["Criar schema MySQL<br/>src/production/db.py"]
     B -->|"Não"| D["Usar schema existente"]
     C --> E["Atualizar fontes via API"]
     D --> E
-    E --> F["BCB, ComexStat, SIDRA, Copernicus e deflação\nsrc/production/collectors.py"]
-    F --> G["Persistir snapshots e auditoria\nMySQL"]
-    A --> H["Registrar CEPEA manual\nhash e período do arquivo"]
+    E --> F["BCB, ComexStat, SIDRA, Copernicus e deflação<br/>src/production/collectors.py"]
+    F --> G["Persistir snapshots e auditoria<br/>MySQL"]
+    A --> H["Registrar CEPEA manual<br/>hash e período do arquivo"]
     H --> G
     G --> I{"Coletores críticos ok?"}
-    I -->|"Não"| J["Abortar antes de retreinar\nevita site com dados parciais"]
-    I -->|"Sim"| K["Reconstruir dataset atual\ncoletores e merger existentes"]
-    K --> L["Treinar modelos de produção\nsrc/production/retrain.py"]
-    L --> M["Versionar modelos e métricas\nmodels_saved/production"]
-    M --> N["Exportar CSVs para site\ndata/outputs/production"]
-    N --> O["Registrar última execução\ndata/production_last_run.json"]
+    I -->|"Não"| J["Abortar antes de retreinar<br/>evita site com dados parciais"]
+    I -->|"Sim"| K["Reconstruir dataset atual<br/>coletores e merger existentes"]
+    K --> L["Treinar modelos de produção<br/>src/production/retrain.py"]
+    L --> M["Versionar modelos e métricas<br/>models_saved/production"]
+    M --> N["Exportar CSVs para site<br/>data/outputs/production"]
+    N --> O["Registrar última execução<br/>data/production_last_run.json"]

@@ -1,28 +1,28 @@
 flowchart LR
     subgraph Fontes["Fontes de dados"]
-        CEPEA["CEPEA\npreço do boi gordo"]
-        BCB["BCB PTAX\ncâmbio"]
-        SIDRA["IBGE SIDRA\nindicadores"]
-        COMEX["ComexStat\nexportações"]
-        CLIMA["Copernicus ERA5\nclima"]
-        DEFL["Base deflacionária\níndice de preços"]
+        CEPEA["CEPEA<br/>preço do boi gordo"]
+        BCB["BCB PTAX<br/>câmbio"]
+        SIDRA["IBGE SIDRA<br/>indicadores"]
+        COMEX["ComexStat<br/>exportações"]
+        CLIMA["Copernicus ERA5<br/>clima"]
+        DEFL["Base deflacionária<br/>índice de preços"]
     end
 
     subgraph Codigo["Arquitetura do código"]
-        COL["src/collectors\ncoleta e cache"]
-        PROC["src/processing\nlimpeza, junção e deflação"]
-        FEAT["src/features\nengenharia de atributos"]
-        MOD["src/models\ntreino, avaliação e predição"]
-        EXP["src/experiments\nrecorte acadêmico 2024/2025"]
-        PROD["src/production\nrotina de produção e MySQL"]
-        APP["app_split_2024_holdout_2025.py\ninterface Streamlit"]
-        EXPOR["src/export\nCSV e saídas para site"]
+        COL["src/collectors<br/>coleta e cache"]
+        PROC["src/processing<br/>limpeza, junção e deflação"]
+        FEAT["src/features<br/>engenharia de atributos"]
+        MOD["src/models<br/>treino, avaliação e predição"]
+        EXP["src/experiments<br/>recorte acadêmico 2024/2025"]
+        PROD["src/production<br/>rotina de produção e MySQL"]
+        APP["app_split_2024_holdout_2025.py<br/>interface Streamlit"]
+        EXPOR["src/export<br/>CSV e saídas para site"]
     end
 
     subgraph Artefatos["Artefatos gerados"]
-        DATA["data/processed\ndatasets, métricas e gráficos"]
-        MODELS["models_saved\nmodelos Random Forest e XGBoost"]
-        OUT["data/outputs\nprevisões e histórico exportado"]
+        DATA["data/processed<br/>datasets, métricas e gráficos"]
+        MODELS["models_saved<br/>modelos Random Forest e XGBoost"]
+        OUT["data/outputs<br/>previsões e histórico exportado"]
     end
 
     CEPEA --> COL

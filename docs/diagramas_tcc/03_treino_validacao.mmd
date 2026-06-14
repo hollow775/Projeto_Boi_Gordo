@@ -1,15 +1,15 @@
 flowchart TD
     TITULO["Treino e validação acadêmica"]
-    A["Início do fluxo acadêmico\nmain_split_2024_holdout_2025.py"] --> B["Carregar ou construir datasets\nload_or_build_feature_datasets"]
+    A["Início do fluxo acadêmico<br/>main_split_2024_holdout_2025.py"] --> B["Carregar ou construir datasets<br/>load_or_build_feature_datasets"]
     B --> C{"Data da observação"}
-    C -->|"Até 31/12/2024"| D["Treino e tuning\nsem dados de 2025"]
-    C -->|"01/01/2025 a 31/12/2025"| E["Holdout de validação\napenas teste final"]
-    D --> F["Treinar modelos por horizonte\nRandom Forest e XGBoost"]
-    F --> G["Salvar modelos e colunas\nmodels_saved/train_split_2024_holdout_2025"]
+    C -->|"Até 31/12/2024"| D["Treino e tuning<br/>sem dados de 2025"]
+    C -->|"01/01/2025 a 31/12/2025"| E["Holdout de validação<br/>apenas teste final"]
+    D --> F["Treinar modelos por horizonte<br/>Random Forest e XGBoost"]
+    F --> G["Salvar modelos e colunas<br/>models_saved/train_split_2024_holdout_2025"]
     G --> H["Predizer no holdout 2025"]
     E --> H
-    H --> I["Calcular métricas\nRMSE, MAE e MAPE"]
-    H --> J["Gerar gráficos\nprevisão versus real"]
-    I --> K["Artefatos acadêmicos separados\ndata/processed/train_split_2024_holdout_2025"]
+    H --> I["Calcular métricas<br/>RMSE, MAE e MAPE"]
+    H --> J["Gerar gráficos<br/>previsão versus real"]
+    I --> K["Artefatos acadêmicos separados<br/>data/processed/train_split_2024_holdout_2025"]
     J --> K
-    K --> L["Material para o TCC\nvalidação temporal realista"]
+    K --> L["Material para o TCC<br/>validação temporal realista"]
